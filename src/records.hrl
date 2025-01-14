@@ -14,14 +14,14 @@
         }).
 -record(chunk, 
         {
-            type,
-            metadata,
-            block_light,
-            sky_light
+            type
+%            metadata
+%            block_light,
+%            sky_light
         }).
 -record(chunk_column, 
         {
             full_column,
-            chunks = [],
+            chunks,
             biome
         }).

@@ -106,12 +106,15 @@ login(Data, Len, Packet_id, State) ->
         Message_join_game = adamantum_encode:join_game(Eid),
         Message_spawn_position = adamantum_encode:spawn_position(0,0,100),
         Message_player_position_and_look = adamantum_encode:player_position_and_look(0,100,0,0,0,0),
+
         send_message(Message_login_success, State),
 %            send_message(Message_set_compression, State),
         send_message(Message_join_game, State),
         io:fwrite("this is me~p~n", [Message_spawn_position]),
         send_message(Message_spawn_position, State),
         send_message(Message_player_position_and_look, State),
+%        Message_chunk_data = adamantum_encode:map_chunk_bulk(0,0),
+%        send_message(Message_chunk_data, State),
 
 
         
