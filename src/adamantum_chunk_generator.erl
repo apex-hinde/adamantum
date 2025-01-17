@@ -1,40 +1,29 @@
 -module(adamantum_chunk_generator).
+
 -include("records.hrl").
--export([gen_column/2]).
 
-gen_column(X, Y) ->
-    EmptyChunk = binary:copy(<<0:4, 0:4, 15:8>>,16*16*16)
-%                             metadata=binary:copy(<<0>>,16*16*8),
-%                             block_light=binary:copy(<<0>>,16*16*8),
-%                             sky_light=binary:copy(<<0>>,16*16*8)
-                        ,
-    BedrockChunk = list_to_binary([binary:copy(<<7:4,0:4,0:8>>,256),
-                                                               binary:copy(<<1:4,0:4,0:8>>,256*15)]),
-    StoneChunk = binary:copy(<<1:4,0:4,0:8>>,16*16*16),
-    TopChunk = list_to_binary([binary:copy(<<3:4,0:4, 0:8>>,256*15),
-                                                           binary:copy(<<2:4,15:4, 15:8>>,256)]),
+-export([gen_column/1]).
 
+gen_column({X, Y}) ->
+    Empty_chunk = #db_chunk{type = binary:copy(<<0>>, 4096),
+                        metadata = binary:copy(<<0>>, 2048),
+                        block_light = binary:copy(<<0>>, 2048),
+                        sky_light = binary:copy(<<0>>, 2048)},
 
-    #chunk_column{full_column=true,
-                       chunks = <<BedrockChunk/binary,
-                               StoneChunk/binary,
-                               StoneChunk/binary,
-                               StoneChunk/binary,
-                               TopChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary,
-                               EmptyChunk/binary>>,
-                       biome=binary:copy(<<0>>,256)}.
+    Bedrock_chunk = Empty_chunk#db_chunk{type = list_to_binary([binary:copy(<<7>>, 256),binary:copy(<<1>>, 4096)])},
+ 
+
+    Stone_chunk = Empty_chunk#db_chunk{type = list_to_binary([binary:copy(<<1>>, 4096)])},
+    Top_chunk = Empty_chunk#db_chunk{type = list_to_binary([binary:copy(<<3>>, 3840), binary:copy(<<2>>, 256)])},
+
+    #db_chunk_column{full_column = true,
+                  chunks = [{ Bedrock_chunk,
+                              Stone_chunk,
+                              Top_chunk,
+                              Empty_chunk}],
+                  biome = binary:copy(<<0>>, 256)}.
 
 
-    
+        
 
 

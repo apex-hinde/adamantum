@@ -31,6 +31,7 @@ init([]) ->
                  period => 1},
     ChildSpecs = [#{id => adamantum,
                     start => {adamantum_listen, start_link, [adamantum_listen, 25565]},
+                    start => {adamantum_chunk_manager, start_link, [adamantum_chunk_manager]},
                     restart => permanent,
                     shutdown => brutal_kill,
                     type => worker,

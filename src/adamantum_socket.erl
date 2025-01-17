@@ -19,7 +19,9 @@
             state_of_connection = handshake,
             username,
             uuid,
-            eid
+            eid,
+            position = {0,70,0, 0, 0}
+
         }).
 
 stop(Name) ->
@@ -39,9 +41,11 @@ handle_call(stop, _From, State) ->
     {stop, normal, stopped, State};
 
 handle_call(_Request, _From, State) ->
+    
     {reply, ok, State}.
 
-handle_cast(_Msg, State) ->
+handle_cast(_Req, State) ->
+    
     {noreply, State}.
 
 handle_info(run_accept, State) ->
@@ -51,7 +55,6 @@ handle_info(run_accept, State) ->
     {noreply, NewState};
 
 handle_info({tcp, Socket, Data}, State) ->
-    io:format("~p~n", [Data]),
     NewState = messages(Data, State),
     {noreply, NewState};
 
@@ -86,6 +89,7 @@ messages(Data, State) ->
                 NewState = login(Content, Len, Packet_id, State),
             NewState;
             play ->
+                play(Content, Len, Packet_id, State),
                 State
             
         end;
@@ -108,13 +112,12 @@ login(Data, Len, Packet_id, State) ->
         Message_player_position_and_look = adamantum_encode:player_position_and_look(0,100,0,0,0,0),
 
         send_message(Message_login_success, State),
-%            send_message(Message_set_compression, State),
+%        send_message(Message_set_compression, State),
         send_message(Message_join_game, State),
-        io:fwrite("this is me~p~n", [Message_spawn_position]),
         send_message(Message_spawn_position, State),
         send_message(Message_player_position_and_look, State),
-%        Message_chunk_data = adamantum_encode:map_chunk_bulk(0,0),
-%        send_message(Message_chunk_data, State),
+        Message_chunk_data = adamantum_encode:chunk_data({0,0}),
+        send_message(Message_chunk_data, State),
 
 
         
@@ -128,18 +131,15 @@ login(Data, Len, Packet_id, State) ->
 play(Data, Len, Packet_id, State) ->
     case Packet_id of 
         <<0>> ->
-            send_message(<<2,0,0>>, State)
+            send_message(<<2,0,0>>, State);
+        <<21>> ->
+            io:format("~p~n",[Data]),
+            State
+        
+        
+        
     end.
 
 
 send_message(Data, State)->
-
     gen_tcp:send(State#state.socket, Data).
-
-
-
-
-
-
-
-
