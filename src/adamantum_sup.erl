@@ -26,16 +26,13 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
-    SupFlags = #{strategy => one_for_all,
-                 intensity => 0,
-                 period => 1},
-    ChildSpecs = [#{id => adamantum,
-                    start => {adamantum_listen, start_link, [adamantum_listen, 25565]},
-                    start => {adamantum_chunk_manager, start_link, [adamantum_chunk_manager]},
-                    restart => permanent,
-                    shutdown => brutal_kill,
-                    type => worker,
-                    modules => [adamantum_listen]}],
-    {ok, {SupFlags, ChildSpecs}}.
+        {ok, {{one_for_all, 0, 1},
+        [{adamantum_listen,
+            {adamantum_listen, start_link, [adamantum_listen, 25565]},
+            permanent, brutal_kill, worker, [adamantum_listen]},
+        {adamantum_chunk_manager,
+            {adamantum_chunk_manager, start_link, [adamantum_chunk_manager]},
+            temporary, brutal_kill, worker, [adamantum_chunk_manager]}
+        ]}}.
 
 %% internal functions

@@ -14,7 +14,7 @@ start_link(Name, Port) ->
 
 init([Port]) ->
     {ok, Socket} = gen_tcp:listen(Port, [binary, {active, true}, {reuseaddr, true}]),
-    adamantum_socket:start_link(self(), Socket), 
+    adamantum_player_manager:start_link(self(), Socket), 
     {ok, #state{ls=Socket}}.
 
 handle_call(stop, _From, State) ->
@@ -24,7 +24,7 @@ handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
-    adamantum_socket:start_link(self(), State#state.ls), 
+    adamantum_player_manager:start_link(self(), State#state.ls), 
     {noreply, State}.
 
 handle_info(_Info, State) ->

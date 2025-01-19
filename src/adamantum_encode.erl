@@ -3,21 +3,15 @@
         map_chunk_bulk/1]).
 -include("records.hrl").
 
-
-
 login_success(Data, UUID, Len) ->
 
     Len_of_name = varint:encode_varint(Len),
     Len_of_UUID = varint:encode_varint(byte_size(UUID)),
-    Message = <<02,Len_of_UUID/binary, UUID/binary, Len_of_name/binary, Data/binary>>,
-
-    Length = varint:encode_varint(byte_size(Message)),
-
-    <<Length/binary, Message/binary>>.
+<<2,Len_of_UUID/binary, UUID/binary, Len_of_name/binary, Data/binary>>.
 
 set_compression() ->
-    Uncompressed_limit = varint:encode_varint(250),
-    <<2,3,-1>>.
+    Compression = varint:encode_varint(100000),
+    <<3, -1>>.
 
 join_game(Eid) -> 
     Gamemode = <<0>>,
@@ -27,39 +21,32 @@ join_game(Eid) ->
     Level_type = <<"flat">>,
     Len_of_level_type = varint:encode_varint(byte_size(Level_type)),
     Reduced_debug_info = <<0>>,
-    Message = <<01, Eid/binary, Gamemode/binary, Dimension/binary, Difficulty/binary, Max_players/binary, Len_of_level_type/binary,
-    Level_type/binary, Reduced_debug_info/binary>>,
-    Length_of_message = varint:encode_varint(byte_size(Message)),
-    <<Length_of_message/binary, Message/binary>>.
+    <<1, Eid/binary, Gamemode/binary, Dimension/binary, Difficulty/binary, Max_players/binary, Len_of_level_type/binary,
+    Level_type/binary, Reduced_debug_info/binary>>.
+
 
 spawn_position(X,Z,Y) ->
-
-    Message = <<5,X:24,Z:24,Y:16>>,
-    Length_of_message = varint:encode_varint(byte_size(Message)),
-    <<Length_of_message/binary, Message/binary>>.
+    <<5,X:24,Z:24,Y:16>>.
 
 
-player_position_and_look(X, Z, Y, Yaw, Pitch, Reletive) ->
-   Message =  <<8, X:64/float, Y:64/float, Z:64/float, Yaw:32/float, Pitch:32/float, Reletive>>,
-   Length_of_message = varint:encode_varint(byte_size(Message)),
-   <<Length_of_message/binary, Message/binary>>.
+player_position_and_look(X, Z, Y, Yaw, Pitch, Relitive) ->
+    <<8, X:64/float, Y:64/float, Z:64/float, Yaw:32/float, Pitch:32/float, Relitive>>.
+
     
 
 chunk_data({X,Y}) ->
-
     Message = <<X:32,Y:32,1,1:3,0:13>>,
     Chunk = adamantum_chunk_manager:get_chunk_column({X,Y}),
     Chunks = Chunk#db_chunk_column.chunks,
-    [Chunks_no_list|T] = Chunks,
+    [Chunks_no_list|_T] = Chunks,
     Chunks_list = tuple_to_list(Chunks_no_list),
     Block_data = unpack_chunk_data(Chunks_list, <<>>),
     Biome_data = Chunk#db_chunk_column.biome,
     Chunk_data = <<Block_data/binary, Biome_data/binary>>,
     Length_of_data = varint:encode_varint(byte_size(Chunk_data)),
     Message2 = <<21, Message/binary, Length_of_data/binary, Chunk_data/binary>>,
-    Length_of_Message = varint:encode_varint(byte_size(Message2)),
-    io:fwrite("~p~n",[Length_of_Message]),
-    <<Length_of_Message/binary, 21, Message2/binary>>.
+    Packet_id = varint:encode_varint(33),
+    <<Packet_id/binary,  Message2/binary>>.
 
 unpack_chunk_data(Chunk, Acc) ->
     case (length(Chunk)) of
@@ -77,13 +64,12 @@ unpack_chunk_data(Chunk, Acc) ->
         Acc2.
         
 
-map_chunk_bulk({X,Y}) ->
+map_chunk_bulk({_X,_Y}) ->
     Message = <<26,1,1,0,0,0:16>>,
-    {Chunk,Biome_data} = adamantum_chunk_generator:gen_column({0,0}),
+    {Chunk,_Biome_data} = adamantum_chunk_manager:gen_column({0,0}),
     List_of_chunks = Chunk#db_chunk_column.chunks,
-    Message2 = <<Message/binary, List_of_chunks/binary>>,
-    Length_of_message = varint:encode_varint(byte_size(Message2)),
-    <<Length_of_message/binary, Message2>>.
+    <<Message/binary, List_of_chunks/binary>>.
+
 
 
 
