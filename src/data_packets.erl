@@ -24,7 +24,7 @@ get_messages_clientbound(Id) ->
         keep_alive ->
             {keep_alive, [varint]};
         join_game ->
-            {join_game, [int, ubyte, byte, ubyte, string, bool]};
+            {join_game, [int, ubyte, byte, ubyte, ubyte, string, bool]};
         chat_message ->
             {chat_message, [chat, byte]};
         time_update ->

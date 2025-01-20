@@ -124,7 +124,10 @@ encode_message(Data, Packet_name) ->
     {Packet_name, Param_list} = data_packets:get_messages_clientbound(Packet_name),
     Data2 = encode_message_list(Data, Param_list,  <<>>),
     
-    {Packet_name, Data2}.
+    Packet_ID = data_packets:get_packet_number_clientbound(Packet_name),
+    Data3 = <<Packet_ID:8, Data2/binary>>,
+
+    {Packet_name, Data3}.
 encode_message_list([], [], Acc) ->
     Acc;
 
