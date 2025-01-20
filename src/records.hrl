@@ -1,4 +1,4 @@
--record(db_mnesia_player, {username, uuid, eid, gamemode, position={0,0,0,0,0}, current_slot}).
+-record(db_player, {username, uuid, eid, gamemode, position={0,0,0,0,0}, current_slot, dimension}).
 -record(entity, {eid, name, type}).
 
 

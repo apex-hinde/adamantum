@@ -1,13 +1,11 @@
 -module(adamantum_encode).
--export([login_success/3, set_compression/0,join_game/1, spawn_position/3, player_position_and_look/6, chunk_data/1,
+-export([set_compression/0,join_game/1, spawn_position/3, player_position_and_look/6, chunk_data/1,
         map_chunk_bulk/1]).
 -include("records.hrl").
 
-login_success(Data, UUID, Len) ->
 
-    Len_of_name = varint:encode_varint(Len),
-    Len_of_UUID = varint:encode_varint(byte_size(UUID)),
-<<2,Len_of_UUID/binary, UUID/binary, Len_of_name/binary, Data/binary>>.
+
+    
 
 set_compression() ->
     Compression = varint:encode_varint(100000),

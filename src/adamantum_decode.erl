@@ -1,28 +1,27 @@
 -module(adamantum_decode).
--export([decode_message/2, decode_bool/1]).
+-export([decode_message/2, encode_message/2]).
 
-decode_message(Data, Packet_ID) ->
-    {Packet_ID, _,Param_list} = data_packets:get_by_packet_id_serverbound(Packet_ID),
-    Data2 = decode_message_list(Data, Param_list, []),
+decode_message(Data, Packet_name) ->
+    {Packet_name, Param_list} = data_packets:get_messages_serverbound(Packet_name),
+    Data2 = decode_message_list(Data, Param_list,  []),
     Data2.
-
-
 decode_message_list(<<>>, [], Acc) ->
     lists:reverse(Acc);
 
 decode_message_list(_Data, [], _Acc) ->
     io:format("~p~n", ["decode error"]);
 
-decode_message_list(Data, [H|T], Acc) ->
-    io:format("~p~n", [Data]),
-    io:format("~p~n", [H]),
-    {Data2, Result} = get_value(Data, H),
+decode_message_list(Data, [H|T],  Acc) ->
+%    io:format("Data: ~p~n", [Data]),
+%    io:format("H: ~p~n", [H]),
+
+    {Data2, Result} = get_decode_value(Data, H),
 
     decode_message_list(Data2, T, [Result|Acc]).
 
 
 % need to add array of x, optional x and enum x decode varlong
-get_value(Data, Type) ->
+get_decode_value(Data, Type) ->
     case Type of
         bool ->
             decode_bool(Data);
@@ -65,7 +64,9 @@ get_value(Data, Type) ->
         angle ->
             decode_angle(Data);
         uuid ->
-            decode_uuid(Data)
+            decode_uuid(Data);
+        byte_array_plugin ->
+            decode_byte_array_plugin(Data) %a list of bytes only for decoding message 23
 
     end.
 
@@ -105,7 +106,8 @@ decode_chat(Data) ->
 decode_identifier(Data) ->
     decode_string(Data).
 decode_varint(Data) ->
-    varint:decode_varint(Data).
+    {Result, Data2} = varint:decode_varint(Data),
+    {Data2, Result}.
 decode_position(Data) ->
     <<X:26/signed-integer, Y:12/signed-integer, Z:26/signed-integer, Data2/binary>> = Data,
     {Data2, {X, Y, Z}}.
@@ -115,3 +117,124 @@ decode_angle(Data) ->
 decode_uuid(Data) ->
     <<UUID:128/binary, Data2/binary>> = Data,
     {Data2, UUID}.
+
+decode_byte_array_plugin(Data) ->
+    {<<>>, Data}.
+encode_message(Data, Packet_name) ->
+    {Packet_name, Param_list} = data_packets:get_messages_clientbound(Packet_name),
+    Data2 = encode_message_list(Data, Param_list,  <<>>),
+    
+    {Packet_name, Data2}.
+encode_message_list([], [], Acc) ->
+    Acc;
+
+encode_message_list([Data|T_data], [H|T],  Acc) ->
+    Result = get_encode_value(Data, H),
+    encode_message_list(T_data, T, <<Acc/binary, Result/binary>>).
+get_encode_value(Data, Type) ->
+    case Type of
+        bool ->
+            encode_bool(Data);
+        byte ->
+            encode_byte(Data);
+        ubyte ->
+            encode_ubyte(Data);
+        short ->
+            encode_short(Data);
+        ushort ->
+            encode_ushort(Data);
+        int ->
+            encode_int(Data);
+        long ->
+            encode_long(Data);
+        float -> 
+            encode_float(Data);
+        double ->
+            encode_double(Data);
+        string ->
+            encode_string(Data);
+        chat ->
+            encode_chat(Data);
+        identifier ->
+            encode_identifier(Data);
+        varint ->
+            encode_varint(Data);
+%        varlong ->
+%            encode_varlong(Data);
+%        chunk_data ->
+%           encode_chunk(Data);
+%        enitity_metadata ->
+%           encode_entity_metadata(Data);
+%        slot ->
+%            encode_slot(Data);
+%        nbt_tag ->
+%            encode_nbt_tag(Data);
+        position ->
+            encode_position(Data);
+        angle ->
+            encode_angle(Data);
+        uuid ->
+            encode_uuid(Data)
+%        byte_array_plugin ->
+%            encode_byte_array_plugin(Data) %a list of bytes only for decoding message 23
+
+        end.
+
+encode_bool(Data) ->
+    case Data of
+        true ->
+            <<1>>;
+        false ->
+            <<0>>
+    end.
+
+encode_byte(Data) ->
+    <<Data:8/signed>>.
+
+encode_ubyte(Data) ->
+    <<Data:8/unsigned>>.
+
+encode_short(Data) ->
+    <<Data:16/signed>>.
+
+encode_ushort(Data) ->
+    <<Data:16/unsigned>>.
+
+encode_int(Data) ->
+    <<Data:32/signed>>.
+
+encode_long(Data) ->
+    <<Data:64/signed>>.
+
+encode_float(Data) ->
+    <<Data:32/float>>.
+
+encode_double(Data) ->
+    <<Data:64/float>>.
+
+encode_string(Data) ->
+    Length = length(Data),
+    Length_of_string = varint:encode_varint(Length),
+    Data2 = list_to_binary(Data),
+    <<Length_of_string/binary, Data2/binary>>.
+
+encode_chat(Data) ->
+    encode_string(Data).
+
+encode_identifier(Data) ->
+    encode_string(Data).
+
+encode_varint(Data) ->
+    varint:encode_varint(Data).
+
+encode_position({X,Y,Z}) ->
+    <<X:26/signed, Y:12/signed, Z:26/signed>>.
+
+encode_angle(Data) ->
+    <<Data:8/unsigned>>.
+
+encode_uuid(Data) ->
+    <<Data:128/unsigned>>.
+
+
+
