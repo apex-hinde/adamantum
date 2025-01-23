@@ -1,5 +1,6 @@
 -module(adamantum_decode).
 -export([decode_message/2, encode_message/2]).
+-include("records.hrl").
 
 decode_message(Data, Packet_name) ->
     {Packet_name, Param_list} = data_packets:get_messages_serverbound(Packet_name),
@@ -164,8 +165,8 @@ get_encode_value(Data, Type) ->
             encode_varint(Data);
 %        varlong ->
 %            encode_varlong(Data);
-%        chunk_data ->
-%           encode_chunk(Data);
+        chunk ->
+           encode_chunk(Data);
 %        enitity_metadata ->
 %           encode_entity_metadata(Data);
 %        slot ->
@@ -230,6 +231,18 @@ encode_identifier(Data) ->
 encode_varint(Data) ->
     varint:encode_varint(Data).
 
+encode_chunk({X,Y}) ->
+    Data = <<0:32, 0:32, 1:8, 1:16>>,
+    Block_data = binary:copy(<<4:4, 0:12>>, 4096),
+    Block_light = binary:copy(<<0:4, 0:4>>, 2048),
+    Sky_light = binary:copy(<<0:4, 0:4>>, 2048),
+    Biome_data = binary:copy(<<0:8>>, 256),
+    Chunk = << Block_data/binary, Block_light/binary, Sky_light/binary, Biome_data/binary>>,
+    Chunk_column = binary:copy(<<Chunk/binary>>, 16),
+    Chunk_length = varint:encode_varint(byte_size(Chunk_column)),
+    <<Data/binary, Chunk_length/binary, Chunk_column/binary>>.
+
+
 encode_position({X,Y,Z}) ->
     <<X:26/signed, Y:12/signed, Z:26/signed>>.
 
@@ -238,6 +251,7 @@ encode_angle(Data) ->
 
 encode_uuid(Data) ->
     <<Data:128/unsigned>>.
+
 
 
 

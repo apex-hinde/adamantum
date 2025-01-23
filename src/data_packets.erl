@@ -88,7 +88,7 @@ get_messages_clientbound(Id) ->
         entity_properties ->
             {entity_properties, [varint, int, array_of_properties]}; %check later
         chunk_data ->
-            {chunk_data, [int, int, bool, ushort, varint, chunk]};
+            {chunk_data, [chunk]};
         multi_block_change ->
             {multi_block_change, [int, int, array_of_short]}; %check later
         block_change ->

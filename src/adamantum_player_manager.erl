@@ -5,8 +5,17 @@
 -export([handle_call/3,handle_cast/2]).
 %for state of play, 0 = handshake, 1 = status, 2 = login, 3 = play
 -record(state, 
-        {listen_pid, listen_socket, state_of_play = 0, socket, db_key}).
+        {listen_pid, listen_socket, state_of_play = 0, socket, db_key, queue}).
 -record(db_mnesia_player, {uuid, data}).
+
+timer(Time) ->
+    receive
+        run_accept ->
+
+            timer:sleep(50),
+            self() ! run_accept
+
+    end.
 
 
 setup() ->
@@ -24,7 +33,8 @@ start_link(Listen_pid, Listen_socket) ->
 init([Listen_pid, Listen_socket]) ->
     self() ! run_accept,
     {ok, #state{listen_pid=Listen_pid,
-        listen_socket=Listen_socket}}.
+        listen_socket=Listen_socket,
+        queue = <<>>}}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -37,9 +47,11 @@ handle_call(stop, _From, State) ->
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
+handle_cast({extra_data, Data},  State) ->
+    NewState = message(State, Data),
+    {noreply, NewState};
 
 handle_cast(Req, State) ->
-    io:format("~p~n", [Req]),
     case Req of 
         {handshake, [_Protocol_version, _Server_address, _Server_port, Next_state]} ->
             NewState = State#state{state_of_play = Next_state},
@@ -58,6 +70,9 @@ handle_cast(Req, State) ->
             {atomic, [DB_mnesia]} = read_from_db(UUID),
             Player_info = DB_mnesia#db_mnesia_player.data,
             encode_message([Player_info#db_player.eid, Player_info#db_player.gamemode, Player_info#db_player.dimension, 2, 20, "flat", false], join_game),
+            encode_message([{0, 0, 100}], spawn_position),
+            encode_message([0, 100, 0, 0, 0, 0], player_position_and_look),
+            encode_message([{0,0}], chunk_data),
             NewState = State#state{state_of_play = 3, db_key = UUID},
             {noreply, NewState};
         {keep_alive, [_Keep_alive_id]} ->
@@ -81,9 +96,9 @@ handle_cast(Req, State) ->
         {player_position_and_look, [_X, _Y, _Z, _Yaw, _Pitch, _On_ground]} ->
             {noreply, State};
 %player actions
-        {player_digging, [_Status, _X, _Y, _Z, _Face]} ->
+        {player_digging, [_Status, {_X, _Y, _Z}, _Face]} ->
             {noreply, State};
-        {player_block_placement, [_X, _Y, _Z, _Face, _Cursor_X, _Cursor_Y, _Cursor_Z]} ->
+        {player_block_placement, [{_X, _Y, _Z}, _Face, _Cursor_X, _Cursor_Y, _Cursor_Z]} ->
             {noreply, State};
         {held_item_change, [_Slot]} ->
             {noreply, State};
@@ -103,13 +118,13 @@ handle_cast(Req, State) ->
             {noreply, State};
         {enchant_item, [_Window_id, _Enchantment]} ->
             {noreply, State};
-        {update_sign, [_X, _Y, _Z, _Line_1, _Line_2, _Line_3, _Line_4]} ->
+        {update_sign, [{_X, _Y, _Z}, _Line_1, _Line_2, _Line_3, _Line_4]} ->
             {noreply, State};
         {player_abilities, [_Flags, _Flying_speed, _Walking_speed]} ->
             {noreply, State};
         {tab_complete, [_Text, _Has_position]} ->
             {noreply, State};
-        {tab_complete, [_Text, _Has_position, _X, _Y, _Z]} ->
+        {tab_complete, [_Text, _Has_position, {_X, _Y, _Z}]} ->
             {noreply, State};
         {client_settings, [_Locale, _View_distance, _Chat_mode, _Chat_colors, _Displayed_skin_parts]} ->
             {noreply, State};
@@ -137,8 +152,16 @@ handle_cast(Req, State) ->
             {noreply, State};
         {join_game, Msg} ->
             send_message(Msg, State),
+            {noreply, State};
+        {spawn_position, Msg} ->
+            send_message(Msg, State),
+            {noreply, State};
+        {player_position_and_look, Msg} ->
+            send_message(Msg, State),
+            {noreply, State};
+        {chunk_data, Msg} ->
+            send_message(Msg, State),
             {noreply, State}
-        
     end.
 
 handle_info(run_accept, State) ->
@@ -149,57 +172,73 @@ handle_info(run_accept, State) ->
 
 
 handle_info({tcp, _Socket, Data}, State) ->
-    io:format("~p~n", [Data]),
+    Queue = State#state.queue,
+    if Queue =/= <<>> ->
+        Data2 = <<Queue/binary, Data/binary>>,
+        Next_state = State#state{queue = <<>>};
+        
+    true ->
+        Data2 = Data,
+        Next_state = State
+    end,
+    message(Next_state, Data2).
+
+
+
+
+
+
+
+
+message(State, Data) ->
     {Length, Data2} = varint:decode_varint(Data),
     {PacketID, Data3} = varint:decode_varint(Data2),
-    if Length=/=byte_size(Data) -> 
-        io:format("Packet length does not match actual length~n", []);
-        true -> ok
-    end,
+    State_of_play = State#state.state_of_play,
+    Length_of_data = byte_size(Data2),
+    if Length=:= Length_of_data ->
+            Data4 = Data3;
+       Length < Length_of_data ->
+            <<Interim_data:Length/binary, Rest/binary>> = Data2,
+            io:format("Interim data ~p~n", [Interim_data]),
+            {_, Data4} = varint:decode_varint(Interim_data),
+            io:format("message to long~p~n", [Data]),
+            message(State, Rest);
+        Length > Length_of_data ->
+            Data4 = Data3,
+            State#state{state_of_play = 4},
+            io:format("message to short ~p~n", [Data]);
 
+        true ->
+            io:format("Error in tcp checker~n"),
+            Data4 = Data3
+       end,
 
     case State#state.state_of_play of
         0 ->
             Packet_name = data_packets:get_handshake_packet_name(PacketID),
-            Decoded = adamantum_decode:decode_message(Data3, Packet_name),
+            Decoded = adamantum_decode:decode_message(Data4, Packet_name),
             gen_server:cast(self(), {Packet_name, Decoded}),
-            io:format("~p~n", [Packet_name]),
             NewState = State#state{state_of_play = 2},
             {noreply, NewState};
         2 ->
             Packet_name = data_packets:get_login_packet_name_serverbound(PacketID),
-            Decoded = adamantum_decode:decode_message(Data3, Packet_name),
+            Decoded = adamantum_decode:decode_message(Data4, Packet_name),
             gen_server:cast(self(), {Packet_name, Decoded}),
             NewState = State#state{state_of_play = 3},
             {noreply, NewState};
         3 ->
             Packet_name = data_packets:get_play_packet_name_serverbound(PacketID),
 
-            Decoded = adamantum_decode:decode_message(Data3, Packet_name),
+            Decoded = adamantum_decode:decode_message(Data4, Packet_name),
             gen_server:cast(self(), {Packet_name, Decoded}),
-            {noreply, State}
-    end.
-
-%to be removed
-login(Data, _Len, State) ->
-    UUID = <<"c534f6a0-7882-3f79-8143-0107ae25aba5">>,
-    Eid = <<0,0,1,74>>,
-    {Len_of_username, Username} = varint:decode_varint(Data),
-%    Message_set_compression = adamantum_encode:set_compression(),
-    Message_join_game = adamantum_encode:join_game(Eid),
-    Message_spawn_position = adamantum_encode:spawn_position(0,0,100),
-    Message_player_position_and_look = adamantum_encode:player_position_and_look(0,100,0,0,0,0),
-%    Message_chunk_data = adamantum_encode:chunk_data({0,0}),
-%    send_message(Message_set_compression, State),
-    send_message(Message_join_game, State),
-    send_message(Message_spawn_position, State),
-    send_message(Message_player_position_and_look, State),
- %   send_message(Message_chunk_data, State),
+            {noreply, State};
+        4 ->
+            NewState = State#state{state_of_play = State_of_play, queue = Data},
+            {noreply, NewState}
+end.
 
 
-    
-                                
-        State.
+
 
 
 send_message({_Packet_name, Message}, State) ->

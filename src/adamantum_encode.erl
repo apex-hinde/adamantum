@@ -1,6 +1,6 @@
 -module(adamantum_encode).
 -export([set_compression/0,join_game/1, spawn_position/3, player_position_and_look/6, chunk_data/1,
-        map_chunk_bulk/1]).
+        map_chunk_bulk/1, unpack_chunk_data/2]).
 -include("records.hrl").
 
 
@@ -33,18 +33,27 @@ player_position_and_look(X, Z, Y, Yaw, Pitch, Relitive) ->
     
 
 chunk_data({X,Y}) ->
-    Message = <<X:32,Y:32,1,1:3,0:13>>,
-    Chunk = adamantum_chunk_manager:get_chunk_column({X,Y}),
-    Chunks = Chunk#db_chunk_column.chunks,
-    [Chunks_no_list|_T] = Chunks,
-    Chunks_list = tuple_to_list(Chunks_no_list),
-    Block_data = unpack_chunk_data(Chunks_list, <<>>),
-    Biome_data = Chunk#db_chunk_column.biome,
-    Chunk_data = <<Block_data/binary, Biome_data/binary>>,
-    Length_of_data = varint:encode_varint(byte_size(Chunk_data)),
-    Message2 = <<21, Message/binary, Length_of_data/binary, Chunk_data/binary>>,
-    Packet_id = varint:encode_varint(33),
-    <<Packet_id/binary,  Message2/binary>>.
+%    Message = <<X:32,Y:32,1,1:3,0:13>>,
+%    Chunk = adamantum_chunk_manager:get_chunk_column({X,Y}),
+%    Chunks = Chunk#db_chunk_column.chunks,
+%    [Chunks_no_list|_T] = Chunks,
+%    Chunks_list = tuple_to_list(Chunks_no_list),
+%    Block_data = unpack_chunk_data(Chunks_list, <<>>),
+%    Biome_data = Chunk#db_chunk_column.biome,
+%    Chunk_data = <<Block_data/binary, Biome_data/binary>>,
+%    Length_of_data = varint:encode_varint(byte_size(Chunk_data)),
+%    Message2 = <<21, Message/binary, Length_of_data/binary, Chunk_data/binary>>,
+%    Packet_id = varint:encode_varint(33),
+%    <<Packet_id/binary,  Message2/binary>>.
+
+    Data = <<0:32, 0:32, 1:8, 1:1, 0:15>>,
+    Block_data = bianry:copy(<<1:4, 0:12>>, 4096),
+    Block_light = binary:copy(<<0:4, 0:4>>, 2048),
+    Sky_light = binary:copy(<<0:4, 0:4>>, 2048),
+    Biome_data = binary:copy(<<0:8>>, 256),
+    Chunk = << Block_data/binary, Block_light/binary, Sky_light/binary, Biome_data/binary>>,
+    Chunk_length = varint:encode_varint(byte_size(Chunk)),
+    <<Data/binary, Chunk_length/binary, Chunk/binary>>.
 
 unpack_chunk_data(Chunk, Acc) ->
     case (length(Chunk)) of
@@ -67,11 +76,4 @@ map_chunk_bulk({_X,_Y}) ->
     {Chunk,_Biome_data} = adamantum_chunk_manager:gen_column({0,0}),
     List_of_chunks = Chunk#db_chunk_column.chunks,
     <<Message/binary, List_of_chunks/binary>>.
-
-
-
-
-
-
-
 
