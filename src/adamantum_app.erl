@@ -21,10 +21,11 @@ setup_player() ->
 
 
 start(_StartType, _StartArgs) ->
-
-    application:start(mnesia),
+    application:start(mnesia),  
     adamantum_chunk_manager:setup(),
+    adamantum_chunk_manager:clear_chunk_table(),
     adamantum_player_manager:setup(),
+    adamantum_player_manager:clear_player_table(),
     adamantum_sup:start_link().
 
 stop(_State) ->

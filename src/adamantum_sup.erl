@@ -28,11 +28,14 @@ start_link() ->
 init([]) ->
         {ok, {{one_for_all, 0, 1},
         [{adamantum_listen,
-            {adamantum_listen, start_link, [adamantum_listen, 25565]},
+            {adamantum_listen, start_link, [adamantum_listen, {25565}]},
             permanent, brutal_kill, worker, [adamantum_listen]},
         {adamantum_chunk_manager,
-            {adamantum_chunk_manager, start_link, [adamantum_chunk_manager]},
-            temporary, brutal_kill, worker, [adamantum_chunk_manager]}
+            {adamantum_chunk_manager, start_link, []},
+            permanent, brutal_kill, worker, [adamantum_chunk_manager]},
+        {adamntum_player_manager,
+            {adamantum_player_manager, start_link, []},
+            permanent, brutal_kill, worker, [adamantum_player_manager]}
         ]}}.
 
 %% internal functions

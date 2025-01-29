@@ -3,6 +3,7 @@
 -include("records.hrl").
 
 decode_message(Data, Packet_name) ->
+
     {Packet_name, Param_list} = data_packets:get_messages_serverbound(Packet_name),
     Data2 = decode_message_list(Data, Param_list,  []),
     Data2.
@@ -101,6 +102,7 @@ decode_double(Data) ->
 decode_string(Data) ->
     {Length, Data1} = varint:decode_varint(Data),
     <<String:Length/binary, Data2/binary>> = Data1,
+    
     {Data2, String}.
 decode_chat(Data) ->
     decode_string(Data).
@@ -122,6 +124,7 @@ decode_uuid(Data) ->
 decode_byte_array_plugin(Data) ->
     {<<>>, Data}.
 encode_message(Data, Packet_name) ->
+    io:format("Data: ~p~n", [Data]),
     {Packet_name, Param_list} = data_packets:get_messages_clientbound(Packet_name),
     Data2 = encode_message_list(Data, Param_list,  <<>>),
     
@@ -165,8 +168,8 @@ get_encode_value(Data, Type) ->
             encode_varint(Data);
 %        varlong ->
 %            encode_varlong(Data);
-        chunk ->
-           encode_chunk(Data);
+%        chunk ->
+%           encode_chunk(Data);
 %        enitity_metadata ->
 %           encode_entity_metadata(Data);
 %        slot ->
@@ -231,16 +234,7 @@ encode_identifier(Data) ->
 encode_varint(Data) ->
     varint:encode_varint(Data).
 
-encode_chunk({X,Y}) ->
-    Data = <<0:32, 0:32, 1:8, 1:16>>,
-    Block_data = binary:copy(<<4:4, 0:12>>, 4096),
-    Block_light = binary:copy(<<0:4, 0:4>>, 2048),
-    Sky_light = binary:copy(<<0:4, 0:4>>, 2048),
-    Biome_data = binary:copy(<<0:8>>, 256),
-    Chunk = << Block_data/binary, Block_light/binary, Sky_light/binary, Biome_data/binary>>,
-    Chunk_column = binary:copy(<<Chunk/binary>>, 16),
-    Chunk_length = varint:encode_varint(byte_size(Chunk_column)),
-    <<Data/binary, Chunk_length/binary, Chunk_column/binary>>.
+
 
 
 encode_position({X,Y,Z}) ->

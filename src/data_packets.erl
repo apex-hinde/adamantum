@@ -1,14 +1,12 @@
 -module(data_packets).
--export([get_messages_clientbound/1, get_messages_serverbound/1, get_handshake_packet_name/1, get_login_packet_name_clientbound/1
-        ,get_login_packet_name_serverbound/1, get_play_packet_name_clientbound/1, get_play_packet_name_serverbound/1
-        ,get_packet_number_clientbound/1]).
-
-
-    
-
-
-
-
+-export([get_messages_clientbound/1
+        , get_messages_serverbound/1
+        , get_handshake_packet_name/1
+        , get_login_packet_name_clientbound/1
+        , get_login_packet_name_serverbound/1
+        , get_play_packet_name_clientbound/1
+        , get_play_packet_name_serverbound/1
+        , get_packet_number_clientbound/1]).
 
 
 get_messages_clientbound(Id) ->
