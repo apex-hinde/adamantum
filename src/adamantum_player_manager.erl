@@ -50,7 +50,6 @@ handle_call(_Request, _From, State) ->
     {reply, ok, State}.
     
 handle_cast({connect, UUID, PID}, State) ->
-    io:format("~p~n", [maps:put(UUID, PID, State#state.connected_players)]),
     {noreply, State#state{connected_players = maps:put(UUID, PID, State#state.connected_players)}};
 
 

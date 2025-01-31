@@ -47,16 +47,13 @@ handle_call(_Request, _From, State) ->
     
 handle_cast(tick, State) ->
     DB_player = adamantum_player_manager:read_from_db(State#state.db_key),
-
     NewState =
         case adamantum_chunk_manager:update_player_chunks(DB_player#db_player.coords, State#state.loaded_chunks) of
             {update_player_chunks, Chunks_to_remove, Chunks_to_add, Player_chunks_load} ->
                 io:format("~p~n", [Chunks_to_add]),
                 seperate_chunk_data_into_parts(Chunks_to_remove, Chunks_to_add, DB_player, State),
-
-
-
                 State#state{loaded_chunks = Player_chunks_load};
+
             no_chunk ->
                 State
         end,
@@ -114,7 +111,10 @@ handle_cast(Req, State) ->
                 {_, _, _, Yaw, Pitch} = Db_player#db_player.coords,
                 adamantum_player_manager:write_to_db(State#state.db_key, Db_player#db_player{coords = {X, Y, Z, Yaw, Pitch}}),
                 State;
-            {player_look, [_Yaw, _Pitch, _On_ground]} ->
+            {player_look, [Yaw, Pitch, _On_ground]} ->
+                Db_player = adamantum_player_manager:read_from_db(State#state.db_key),
+                {X, Y, Z, _, _} = Db_player#db_player.coords,
+                adamantum_player_manager:write_to_db(State#state.db_key, Db_player#db_player{coords = {X, Y, Z, Yaw, Pitch}}),
                 State;
             {player_position_and_look, [X, Y, Z, Yaw, Pitch, _On_ground]} ->
                 Db_player = adamantum_player_manager:read_from_db(State#state.db_key),
@@ -210,7 +210,8 @@ handle_info({tcp, _Socket, Data}, State) ->
 
     case varint:decode_varint(Data2) of
         {error, _} ->
-            {noreply, State};
+            Next_state = State#state{queue = Data2},
+            {noreply, Next_state};
         {_Length, _Data3} ->
             Next_state = State#state{queue = <<>>},
             NewState = message(Data2, Next_state),
@@ -223,7 +224,7 @@ message(Data, State) ->
     Length_of_data = byte_size(Data2),
 
     if Length =:= Length_of_data ->
-        process_message(Data2, State);
+            process_message(Data2, State);
 
        Length < Length_of_data ->
             <<Interim_data:Length/binary, Rest/binary>> = Data2,
@@ -254,7 +255,6 @@ process_message(Data,  State) ->
                 
             ?PLAY ->
                 Packet_name = data_packets:get_play_packet_name_serverbound(Packet_ID),
-
                 Decoded = adamantum_decode:decode_message(Data2, Packet_name),
                 gen_server:cast(self(), {Packet_name, Decoded}),
                 State

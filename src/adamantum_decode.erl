@@ -1,6 +1,6 @@
 -module(adamantum_decode).
 -export([decode_message/2, encode_message/2]).
--include("records.hrl").
+
 
 decode_message(Data, Packet_name) ->
 
@@ -14,11 +14,8 @@ decode_message_list(_Data, [], _Acc) ->
     io:format("~p~n", ["decode error"]);
 
 decode_message_list(Data, [H|T],  Acc) ->
-%    io:format("Data: ~p~n", [Data]),
-%    io:format("H: ~p~n", [H]),
 
     {Data2, Result} = get_decode_value(Data, H),
-
     decode_message_list(Data2, T, [Result|Acc]).
 
 
@@ -102,7 +99,6 @@ decode_double(Data) ->
 decode_string(Data) ->
     {Length, Data1} = varint:decode_varint(Data),
     <<String:Length/binary, Data2/binary>> = Data1,
-    
     {Data2, String}.
 decode_chat(Data) ->
     decode_string(Data).

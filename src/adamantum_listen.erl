@@ -16,7 +16,7 @@ start_link(Name, {Port}) ->
     gen_server:start_link({local, Name}, ?MODULE, [Port], []).
 
 init([Port]) ->
-    erlang:send_after(0, self(), {init, Port}),
+    self() ! {init, Port},
     {ok, #state{}}.
 
 handle_call(stop, _From, State) ->
@@ -28,16 +28,17 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({init, Port}, State) ->
-    case gen_tcp:listen(Port, [binary, {active, true}, {reuseaddr, true}]) of
-        {ok, Socket} ->
-            adamantum_player:start_link(self(), Socket),
-            NewState = State#state{ls = Socket};
+    NewState = 
+        case gen_tcp:listen(Port, [binary, {active, true}, {reuseaddr, true}]) of
+            {ok, Socket} ->
+                adamantum_player:start_link(self(), Socket),
+            State#state{ls = Socket};
 
-        {error, Reason} ->
-            io:format("Error in listen: ~p~n", [Reason]),
-            erlang:send_after(2000, self(), {init, Port}),
-            NewState = State
-    end,
+            {error, Reason} ->
+                io:format("Error in listen: ~p~n", [Reason]),
+                erlang:send_after(2000, self(), {init, Port}),
+            State
+        end,
     {noreply, NewState};
 
 handle_info(_Info, State) ->
