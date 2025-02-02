@@ -35,7 +35,10 @@ init([]) ->
             permanent, brutal_kill, worker, [adamantum_chunk_manager]},
         {adamntum_player_manager,
             {adamantum_player_manager, start_link, []},
-            permanent, brutal_kill, worker, [adamantum_player_manager]}
+            permanent, brutal_kill, worker, [adamantum_player_manager]},
+        {adamntum_uuid,
+            {adamantum_uuid, start_link, []},
+            permanent, brutal_kill, worker, [adamantum_uuid]}
         ]}}.
 
 %% internal functions

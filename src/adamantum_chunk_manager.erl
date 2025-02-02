@@ -1,14 +1,14 @@
 -module(adamantum_chunk_manager).
 
 -behaviour(gen_server).
-
+-include("records.hrl").
 -define(SERVER, ?MODULE).
 
 %% API
 -export([stop/0, start_link/0]).
 -export([init/1, handle_call/3, handle_info/2, terminate/2, code_change/3,
-         update_player_chunks/2, setup/0, get_chunk_column/1, clear_chunk_table/0,
-         chunks_to_add/2, chunks_to_remove/2, test_thing1/3]).
+         update_loaded_player_chunks/2, setup/0, get_chunk_column/1, clear_chunk_table/0,
+         chunks_to_add/2, chunks_to_remove/2, test_thing1/3, remove_block/1]).
 
 -record(state, {dummy}).
 -record(db_mnesia_chunk, {coords, data}).
@@ -19,8 +19,12 @@ stop() ->
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
-update_player_chunks(Coords, Loaded_chunks) ->
+update_loaded_player_chunks(Coords, Loaded_chunks) ->
     gen_server:call(?SERVER, {update_player_chunks, Coords, Loaded_chunks}).
+
+remove_block(Block_coord) ->
+    gen_server:cast(?SERVER, {remove_block, Block_coord}).
+
 
 
 init(_Args) ->
@@ -36,18 +40,22 @@ handle_call({update_player_chunks, Coords, Loaded_chunks}, _From, State) ->
         true ->
             {reply, no_chunk, State};
         false ->
-            
-            Merged_list = lists:keymerge(1, Loaded_chunks, Player_chunks_load),
-            Chunks_to_remove = lists:subtract(Merged_list, Player_chunks_load),
+%            Sorted_loaded_chunks = lists:keysort(1, Loaded_chunks),
+%            Sorted_layer_chunks_load = lists:keysort(1, Player_chunks_load),
+
+            Merged_list = lists:merge(Loaded_chunks, Player_chunks_load),
+%            Sorted_merged_list = lists:sort(Merged_list),
+            Chunks_to_remove = lists:subtract(Loaded_chunks, Loaded_chunks),
             Chunks_to_send = lists:subtract(Player_chunks_load, Loaded_chunks),
-            io:format("loaded chunks ~p~n", [Loaded_chunks]),
-            io:format("chunks surrounding player ~p~n", [Player_chunks_load]),
+%            io:format("Merged_list ~p~n", [Merged_list]),
+%            io:format("Player_chunks_load ~p~n", [Player_chunks_load]),
+
+%            io:format("loaded chunks ~p~n", [Loaded_chunks]),
+%            io:format("chunks surrounding player ~p~n", [Player_chunks_load]),
             io:format("chunks to remove ~p~n", [Chunks_to_remove]),
             io:format("chunks to add ~p~n", [Chunks_to_send]),
-            io:format("x,y:  ~p~n", [[X_chunk, Y_chunk]]),
-
-
-
+%            io:format("x,y:  ~p~n", [[X_chunk, Y_chunk]]),
+%
             {reply, {update_player_chunks, Chunks_to_remove, Chunks_to_send, Player_chunks_load}, State}
     end;
 
@@ -56,6 +64,26 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
+handle_cast({remove_block, Block_coord}, State) ->
+    {X,Y,Z} = Block_coord,
+    X_chunk = floor(X / 16),
+    Y_chunk = floor(Z / 16),
+    Hight_chunk = floor(Y / 16),
+    Chunk = read_from_db({X_chunk, Y_chunk}),
+    Chunk_column = Chunk#db_chunk_column.chunks,
+    Chunk_column2 = remove_block2((X rem 16), (Y rem 16), (Z rem 16), Chunk_column, [], Hight_chunk),
+    write_chunk({X_chunk, Y_chunk}, Chunk_column2),
+    {noreply, State}.
+
+remove_block2(X,Y,Z,[H|Chunk_column], Acc, I) ->
+    case I of 
+        0 ->
+            H#db_chunk.block_type,
+            
+            Acc;
+        _ ->
+            remove_block2(X,Y,Z, Chunk_column, [H | Acc], I-1)
+    end.
 
 chunks_to_remove([], Acc) ->
     Acc;
@@ -69,8 +97,8 @@ chunks_to_add(List_of_chunks, Acc) ->
     [Chunk_to_remove | T] = List_of_chunks,
     chunks_to_remove(T, [{add, Chunk_to_remove, get_chunk_column(Chunk_to_remove)} | Acc]).
 
-%returns a list which contains all of the chunk coords that should be loaded.
-% adamantum_chunk_manager:test_thing1(-7, {0,0}, []).
+%% returns a list which contains all of the chunk coords that should be loaded.
+%% adamantum_chunk_manager:test_thing1(-7, {0,0}, []).
 
 test_thing1(I, {X,Y}, Acc) ->
     X2 = X + 8,
@@ -104,6 +132,12 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+
+
+
+
+
+
 clear_chunk_table() ->
     mnesia:clear_table(db_mnesia_chunk).
 
@@ -114,7 +148,7 @@ setup() ->
                          {disc_copies, [node()]}]).
 
 get_empty_chunk_column() ->
-    <<0:256>>.
+    <<0:2048>>.
 
 get_chunk_column({X_chunk, Y_chunk}) ->
 %    X_chunk = floor(X / 16),
@@ -129,6 +163,9 @@ get_chunk_column({X_chunk, Y_chunk}) ->
                 Result
     end.
 
+
+
+
 read_from_db({X,Y}) -> 
     case mnesia:dirty_read({db_mnesia_chunk, {X,Y}}) of 
         [] -> 
@@ -140,4 +177,3 @@ read_from_db({X,Y}) ->
 write_chunk(Coords, Chunk_data) ->
     F = fun() -> mnesia:write(#db_mnesia_chunk{coords = Coords, data = Chunk_data}) end,
     mnesia:transaction(F).
-

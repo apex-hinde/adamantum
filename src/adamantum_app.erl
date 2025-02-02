@@ -21,6 +21,7 @@ setup_player() ->
 
 
 start(_StartType, _StartArgs) ->
+    inets:start(),
     application:start(mnesia),  
     adamantum_chunk_manager:setup(),
     adamantum_chunk_manager:clear_chunk_table(),

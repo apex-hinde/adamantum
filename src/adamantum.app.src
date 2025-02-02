@@ -3,6 +3,7 @@
   {vsn, "0.1.0"},
   {registered, []},
   {mod, {adamantum_app, []}},
+
   {applications,
    [kernel,
     stdlib
