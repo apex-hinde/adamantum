@@ -3,12 +3,11 @@ Things to do
 - [x] change the payer manager to be a seperate gen server that managers all players.
 - [x] make the listen socket retry to connect if fails
 - [x] change the clock so its sends to all players
+- [x] uuid needs to be gotten from microsofts servers.
 
-- [ ] for arrays of data in the get by packet id, have a list with [type of packets in array, length of array, array]
+- [ ] for arrays of data in the get_by_packet_id, have a list with [type of packets in array, length of array, array]
 
 - [ ] need to add array of x, optional x, enum x, decode varlong, entity metadata, byte array to decoder.
-
-- [ ] uuid needs to be gotten from microsofts servers.
 
 - [ ] implement an EID system
 

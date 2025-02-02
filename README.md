@@ -2,6 +2,8 @@ adamantum
 =====
 A 1.8.9 minecraft server built in the erlang programming language
 
+note the project is still in development
+
 
 Build
 -----
@@ -12,7 +14,3 @@ Build
     press on multiplayer then direct connect with the server adress localhost
 
     
-currenty working on
------
-chunk generation
-
