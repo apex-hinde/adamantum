@@ -11,7 +11,7 @@
 
 setup() ->
     mnesia:delete_schema([node()]),
-    ok = mnesia:create_schema([node()]).
+    mnesia:create_schema([node()]).
 
 start(_StartType, _StartArgs) ->
 

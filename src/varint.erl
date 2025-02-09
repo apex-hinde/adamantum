@@ -17,4 +17,4 @@ encode_varint(I) when is_integer(I), I >= 0, I =< 127 ->
 encode_varint(I) when is_integer(I), I > 127 ->
     <<1:1, (I band 127):7, (encode_varint(I bsr 7))/binary>>;
 encode_varint(I) when is_integer(I), I < 0 ->
-    erlang:error({badarg, I}).
+    error({badarg, I}).

@@ -1,12 +1,12 @@
 -module(decode).
 -export([decode_message/2]).
+%% exported for testing reasons
 -export([decode_uuid/1, decode_login_success/1]).
 
 
 
 decode_message(Data, Packet_name) ->
-
-    {Packet_name, Param_list} = data_packets:get_messages_serverbound(Packet_name),
+    {_, Param_list} = data_packets:get_messages_serverbound(Packet_name),
     Data2 = decode_message_list(Data, Param_list,  []),
     Data2.
 
@@ -70,7 +70,7 @@ get_decode_value(Data, Type) ->
         fixed_bitset ->
             decode_fixed_bitset(Data);
         prefixed_array ->
-            decode_prefixed_array(Data)
+            decode_prefixed_array(Data);
 %        in_set ->
 %            decode_in_set(Data);
 %        sound_event ->
@@ -85,6 +85,8 @@ get_decode_value(Data, Type) ->
 %            decode_chunk_data(Data);
 %        light_data ->
 %            decode_light_data(Data)
+        {prefixed_optional, Type2} ->
+            decode_prefixed_optional(Data, Type2)
     end.
 
 decode_bool(Data) ->
@@ -143,6 +145,14 @@ decode_prefixed_array(Data) ->
     {Length, Data2} = varint:decode_varint(Data),
     <<Prefixed_array:Length, Data3/binary>> = Data2,
     {Data3, Prefixed_array}.
+decode_prefixed_optional(Data, Type) ->
+    <<Bool:8, Data2/binary>> = Data,
+    case Bool of
+        0 ->
+            {Data2, undefined};
+        1 ->
+            get_decode_value(Data2, Type)
+    end.
 
 
 

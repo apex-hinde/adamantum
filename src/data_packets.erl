@@ -7,7 +7,9 @@
         get_login_packet_name_clientbound/1,
         get_login_packet_name_serverbound/1,
         get_messages_clientbound/1,
-        get_packet_number_clientbound/1]).
+        get_packet_number_clientbound/1,
+        get_configuration_packet_name_clientbound/1,
+        get_configuration_packet_name_serverbound/1]).
 
 get_handshake_packet_name(_ID) ->
     handshake.
@@ -62,19 +64,19 @@ get_configuration_packet_name_serverbound(ID) ->
         0 ->
             client_information;
         1 ->
-            cookie_response;
+            cookie_response_configuration;
         2 ->
-            custom_payload;
+            serverbound_plugin_message_configuration;
         3 ->
-            finish_configuration;
+            acknowledge_finish_configuration;
         4 ->
-            keep_alive;
+            serverbound_keep_alive_configuration;
         5 ->
-            pong;
+            pong_configuration;
         6 ->
-            resource_pack;
+            resource_pack_responce_configuration;
         7 ->
-            select_known_packs
+            serverbound_known_packs
     end.
 
 
@@ -144,8 +146,21 @@ get_messages_serverbound(Id) ->
             {cookie_reponse_login, [identifier, prefixed_array]};
         client_information ->
             {client_information, [string, byte, varint, bool, ubyte, varint, bool, bool, varint]};
-        cookie_response ->
-            {cookie_response, [identifier]}
+        cookie_response_configuration ->
+            {cookie_response, [identifier, {prefixed_optional, prefixed_array}]};
+        serverbound_plugin_message_configuration ->
+            {plugin_message_configuration, [identifier, byte_array]};
+        acknowledge_finish_configuration ->
+            {acknowledge_finish_configuration, []};
+        serverbound_keep_alive_configuration ->
+            {keep_alive_configuration, [long]};
+        pong_configuration ->
+            {pong_configuration, [int]};
+        resource_pack_responce_configuration ->
+            {resource_pack_responce_configuration, [uuid, varint]};
+        serverbound_known_packs ->
+            {serverbound_known_packs, [string, string, string]}
+
     end.
 
 

@@ -151,9 +151,12 @@ process_message(Data, State) ->
                 Packet_name = data_packets:get_login_packet_name_serverbound(Packet_ID),
                 Decoded = decode:decode_message(Data2, Packet_name),
                 gen_server:cast(?SERVER, {Packet_name, Decoded}),
+                State;
+            ?CONFIGURATION ->
+                Packet_name = data_packets:get_configuration_packet_name_serverbound(Packet_ID),
+                Decoded = decode:decode_message(Data2, Packet_name),
+                gen_server:cast(?SERVER, {Packet_name, Decoded}),
                 State
-            ?CONFIGURATION
-            
     end,
     NewState.
 
