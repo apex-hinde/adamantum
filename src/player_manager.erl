@@ -1,4 +1,4 @@
--module(adamantum_player_manager).
+-module(player_manager).
 -behaviour(gen_server).
 -define(SERVER, ?MODULE).
 
@@ -45,7 +45,15 @@ code_change(_OldVsn, State, _Extra) ->
 
 handle_call(stop, _From, State) ->
     {stop, normal, stopped, State};
-
+handle_call({read_from_db, Key}, _From, State) ->
+    Return = 
+        case mnesia:dirty_read({db_mnesia_player, Key}) of 
+            [] -> 
+                [];
+            [DB] ->
+                DB#db_mnesia_player.data
+        end,
+    {reply, Return, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
     
@@ -86,16 +94,12 @@ clear_player_table() ->
 write_to_db(UUID, Data) ->
     gen_server:cast(?SERVER, {write_to_db, UUID, Data}).
 
-read_from_db(Key) -> 
+read_from_db(Key) ->
+    gen_server:call(?SERVER, {read_from_db, Key}).
 
-    case mnesia:dirty_read({db_mnesia_player, Key}) of 
-        [] -> 
-            [];
-        [DB] ->
-            DB#db_mnesia_player.data
-    end.
+
+    
 
 send_to_all_players(Message, State) ->
     Player_list = maps:to_list(State#state.connected_players),
     lists:foreach(fun({_, PID}) -> gen_server:cast(PID, Message) end, Player_list).
-

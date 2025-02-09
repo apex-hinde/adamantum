@@ -1,6 +1,6 @@
 adamantum
 =====
-A 1.8.9 minecraft server built in the erlang programming language
+A 1.20. minecraft server built in the erlang programming language
 
 note the project is still in development
 

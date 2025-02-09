@@ -1,5 +1,4 @@
--module(adamantum_listen).
-
+-module(listen).
 -behaviour(gen_server).
 
 %% API
@@ -31,7 +30,7 @@ handle_info({init, Port}, State) ->
     NewState = 
         case gen_tcp:listen(Port, [binary, {active, true}, {reuseaddr, true}]) of
             {ok, Socket} ->
-                adamantum_player:start_link(self(), Socket),
+                player:start_link(self(), Socket),
             State#state{ls = Socket};
 
             {error, Reason} ->
