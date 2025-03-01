@@ -2,7 +2,6 @@
 -export([encode_message/2]).
 
 encode_message(Data, Packet_name) ->
-    io:format("Data: ~p~n", [Data]),
     {Packet_name, Param_list} = data_packets:get_messages_clientbound(Packet_name),
     Data2 = encode_message_list(Data, Param_list,  <<>>),
     
@@ -55,8 +54,8 @@ get_encode_value(Data, Type) ->
 %            encode_entity_metadata(Data);
 %        slot ->
 %            encode_slot(Data);
-%        nbt ->
-%            encode_nbt(Data);
+        nbt ->
+            nbt:encode(Data);
         position ->
             encode_position(Data);
         angle ->
@@ -154,7 +153,7 @@ encode_prefixed_array(Data) ->
     Length = length(Data),
     Length_of_string = varint:encode_varint(Length),
     <<Length_of_string/binary, Data/binary>>.
-encode_prefixed_array_login({Name, Value}) ->
+encode_prefixed_array_login({_Name, _Value}) ->
 %    io:format("why of why~p~n", [{Name, Value}]),
 %    Length_of_name = varint:encode_varint(byte_size(Name)),
 %    Length_of_value = varint:encode_varint(byte_size(Value)),

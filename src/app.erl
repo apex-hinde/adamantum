@@ -9,10 +9,6 @@
 
 -export([start/2, stop/1, setup/0]).
 
-setup() ->
-    mnesia:delete_schema([node()]),
-    mnesia:create_schema([node()]).
-
 start(_StartType, _StartArgs) ->
 
     inets:start(),
@@ -28,3 +24,8 @@ stop(_State) ->
     ok.
 
 %% internal functions
+
+setup() ->
+    mnesia:stop(),
+    mnesia:delete_schema([node()]),
+    mnesia:create_schema([node()]).

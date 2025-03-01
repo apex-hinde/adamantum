@@ -83,37 +83,37 @@ get_configuration_packet_name_serverbound(ID) ->
 get_configuration_packet_name_clientbound(ID) ->
     case ID of
         0 ->
-            cookie_request;
+            cookie_request_configuration;
         1 ->
-            clientbound_plugin_message;
+            clientbound_plugin_message_configuration;
         2 ->
             disconnect_configuration;
         3 ->
             finish_configuration;
         4 ->
-            keep_alive;
+            clientbound_keep_alive_configuration;
         5 ->
-            ping;
+            ping_configuration;
         6 ->
             reset_chat;
         7 ->
             registry_data;
         8 ->
-            resource_pack_pop;
+            remove_resource_pack_configuration;
         9 ->
-            resource_pack_push;
+            add_resource_pack_configuration;
         10 ->
-            store_cookie;
+            store_cookie_configuration;
         11 ->
-            transfer;
+            transfer_configuration;
         12 ->
-            update_enabled_features;
+            feature_flags;
         13 ->
-            update_tags;
+            update_tags_configuration;
         14 ->
-            select_known_packs;
+            clientbound_known_packs;
         15 ->
-            custom_report_details;
+            custom_report_details_configuration;
         16 ->
             server_links
     end.
@@ -127,7 +127,24 @@ get_packet_number_clientbound(ID) ->
         login_success -> 2;
         set_compression -> 3;
         login_plugin_request -> 4;
-        cookie_request_login -> 5
+        cookie_request_login -> 5;
+        cookie_request_configuration -> 0;
+        clientbound_plugin_message_configuration -> 1;
+        disconnect_configuration -> 2;
+        finish_configuration -> 3;
+        clientbound_keep_alive_configuration -> 4;
+        ping_configuration -> 5;
+        reset_chat -> 6;
+        registry_data -> 7;
+        remove_resource_pack_configuration -> 8;
+        add_resource_pack_configuration -> 9;
+        store_cookie_configuration -> 10;
+        transfer_configuration -> 11;
+        feature_flags -> 12;
+        update_tags_configuration -> 13;
+        clientbound_known_packs -> 14;
+        custom_report_details_configuration -> 15;
+        server_links -> 16
     end.
 
 get_messages_serverbound(Id) ->
@@ -137,19 +154,19 @@ get_messages_serverbound(Id) ->
         login_start ->
             {login_start, [string, uuid]};
         encryption_response ->
-            {encryption_response, [byte_array, byte_array]};
+            {encryption_response, [{prefixed_array, [byte]} , {prefixed_array, [byte]}]};
         login_plugin_response ->
-            {login_plugin_response, [varint, byte_array]};
+            {login_plugin_response, [varint, {prefixed_optional, byte_array_end}]};
         login_acknowledged ->
             {login_acknowledged, []};
         cookie_reponse_login ->
-            {cookie_reponse_login, [identifier, prefixed_array]};
+            {cookie_reponse_login, [identifier, {prefixed_array, [byte]}]};
         client_information ->
             {client_information, [string, byte, varint, bool, ubyte, varint, bool, bool, varint]};
         cookie_response_configuration ->
-            {cookie_response, [identifier, {prefixed_optional, prefixed_array}]};
+            {cookie_response, [identifier, {{prefixed_array, [byte]}, {prefixed_array, [byte]}}]};
         serverbound_plugin_message_configuration ->
-            {plugin_message_configuration, [identifier, byte_array]};
+            {plugin_message_configuration, [identifier, byte_array_end]};
         acknowledge_finish_configuration ->
             {acknowledge_finish_configuration, []};
         serverbound_keep_alive_configuration ->
@@ -177,6 +194,43 @@ get_messages_clientbound(Id) ->
         login_plugin_request ->
             {login_plugin_request, [varint, identifier, byte_array]};
         cookie_request_login ->
-            {cookie_request_login, [identifier]}
+            {cookie_request_login, [identifier]};
+        cookie_request_configuration ->
+            {cookie_request_configuration, [identifier]};
+        clientbound_plugin_message_configuration ->
+            {plugin_message_configuration, [identifier, byte_array_end]};
+        disconnect_configuration ->
+            {disconnect_configuration, [text_component]};
+        finish_configuration ->
+            {finish_configuration, []};
+        clientbound_keep_alive_configuration ->
+            {keep_alive_configuration, [long]};
+        ping_configuration ->
+            {ping_configuration, [int]};
+        reset_chat ->
+            {reset_chat, []};
+        registry_data ->
+            {registry_data, [identifier, {prefixed_array, [identifier, {prefixed_optional, nbt}]}]};
+        remove_resource_pack_configuration ->
+            {remove_resource_pack_configuration, [{prefixed_optional, uuid}]};
+        add_resource_pack_configuration ->
+            {add_resource_pack_configuration, [uuid, string, string, bool, {prefixed_optional, text_component}]};
+        store_cookie_configuration ->
+            {store_cookie_configuration, [identifier, {prefixed_array, [byte]}]};
+        transfer_configuration ->
+            {transfer_configuration, [string, varint]};
+        feature_flags ->
+            {feature_flags, [{prefixed_array, [identifier]}]};
+        update_tags_configuration ->
+            {update_tags_configuration, [{prefixed_array, [identifier, {prefixed_array, [identifier, varint]}]}]};
+        clientbound_known_packs ->
+            {clientbound_known_packs, [{prefixed_array, [string, string, string]}]};
+        custom_report_details_configuration ->
+            {custom_report_details_configuration, [{prefixed_array, [string, string]}]};
+        server_links ->
+            {server_links, [{prefixed_array, [bool, varint, string]}]}
+
+            
+
     end.
         

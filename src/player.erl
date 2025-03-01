@@ -20,6 +20,7 @@
 -define(LOGIN, 2).
 -define(TRANSFER, 3).
 -define(CONFIGURATION, 4).
+-define(PLAY, 5).
 
 -record(state, {listen_pid, listen_socket, player_socket, queue, state_of_play = ?HANDSHAKE, db_key}).
 
@@ -72,18 +73,37 @@ handle_cast(Req, State) ->
                 State#state{db_key = Non_local_UUID};
             {encryption_response, [_Shared_secret, _Verify_token]} ->
                 State;
-            {login_plugin_response, [_Message_id, _Data]} ->
+            {login_plugin_response, [_Message_id, [_Data]]} ->
                 
                 State;
             {login_acknowledged, []} ->
                 State#state{state_of_play = ?CONFIGURATION};
-            {cookie_reponse_login, [_Key, _Payload]} ->
+%% not implimented
+            {cookie_reponse_login, [_Key, [_Payload]]} ->
                 State;
+%% not implimented
+            {client_information, [_Locale, _View_distance, _Chat_mode, _Chat_colours, _Displayed_skin_parts, _Main_hand, _Enable_text_filtering, _Allow_server_listings, _Particle_status]} ->
+                State;
+            {cookie_response_configuration, [_Key, [_Payload]]} ->
+                State;
+            {serverbound_plugin_message_configuration, [_Channel, _Data]} ->
+                encode_message([], finish_configuration),
+                State;
+            {acknowledge_finish_configuration, []} ->
+                State;
+
+
+
 
 
             {login_success, Data} ->
                 send_message(Data, State),
-                State
+                State#state{state_of_play = ?CONFIGURATION};
+            {finish_configuration, Data} ->
+                send_message(Data, State),
+                State#state{state_of_play = ?PLAY}
+
+            
             
 
         end,
@@ -146,7 +166,6 @@ process_message(Data, State) ->
                 Decoded = decode:decode_message(Data2, Packet_name),
                 gen_server:cast(?SERVER, {Packet_name, Decoded}),
                 State;
-
             ?LOGIN ->
                 Packet_name = data_packets:get_login_packet_name_serverbound(Packet_ID),
                 Decoded = decode:decode_message(Data2, Packet_name),
@@ -163,8 +182,6 @@ process_message(Data, State) ->
 
 send_message(Message, State) ->
     Length = varint:encode_varint(byte_size(Message)),
-    io:format("length ~p~n", [Length]),
-    io:format("message ~p~n", [<<Length/binary, Message/binary>>]),
 
     gen_tcp:send(State#state.player_socket, <<Length/binary, Message/binary>>).
 
