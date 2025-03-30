@@ -28,8 +28,15 @@ stop() ->
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+%% API
 connect_to_PM(UUID, PID) ->
     gen_server:cast(?SERVER, {connect, UUID, PID}).
+
+write_to_db(UUID, Data) ->
+    gen_server:cast(?SERVER, {write_to_db, UUID, Data}).
+
+read_from_db(Key) ->
+    gen_server:call(?SERVER, {read_from_db, Key}).
 
 
 init(_Args) ->
@@ -47,7 +54,7 @@ handle_call(stop, _From, State) ->
     {stop, normal, stopped, State};
 handle_call({read_from_db, Key}, _From, State) ->
     Return = 
-        case mnesia:dirty_read({db_mnesia_player, Key}) of 
+        case mnesia:dirty_read(db_mnesia_player, Key) of 
             [] -> 
                 [];
             [DB] ->
@@ -91,11 +98,7 @@ setup() ->
 clear_player_table() ->
     mnesia:clear_table(db_mnesia_player).
 
-write_to_db(UUID, Data) ->
-    gen_server:cast(?SERVER, {write_to_db, UUID, Data}).
 
-read_from_db(Key) ->
-    gen_server:call(?SERVER, {read_from_db, Key}).
 
 
     

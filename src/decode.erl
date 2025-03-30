@@ -8,6 +8,7 @@
 decode_message(Data, Packet_name) ->
     {_, Param_list} = data_packets:get_messages_serverbound(Packet_name),
     Data2 = decode_message_list(Data, Param_list,  []),
+    io:format("~p~n", [Data2]),
     Data2.
 
 decode_message_list(<<>>, [], Acc) ->
@@ -23,6 +24,10 @@ decode_message_list(Data, [H|T],  Acc) ->
 
 get_decode_value(Data, Type) ->
     case Type of 
+        {optional, Type2} ->
+            if length(Data) >= 1 ->
+                get_decode_value(Data, Type2)
+            end;
         bool ->
             decode_bool(Data);
         byte ->
@@ -57,8 +62,8 @@ get_decode_value(Data, Type) ->
 %            decode_entity_metadata(Data);
 %        slot ->
 %            decode_slot(Data);
-%        nbt ->
-%            decode_nbt(Data);
+        nbt ->
+            nbt:decode(Data);
         position ->
             decode_position(Data);
         angle ->
@@ -86,7 +91,19 @@ get_decode_value(Data, Type) ->
 %        light_data ->
 %            decode_light_data(Data)
         {prefixed_optional, Type2} ->
-            decode_prefixed_optional(Data, Type2)
+            decode_prefixed_optional(Data, Type2);
+
+%% after this is for specific cases
+%% this is if the byte array contains all the rest of the data
+
+        byte_array_end ->
+            decode_byte_array_end(Data);
+        byte_array_chat ->
+            decode_byte_array_chat(Data);
+        {prefixed_array, Type2} ->
+            {Length, Data2} = varint:decode_varint(Data),
+            <<Prefixed_array_data:Length/binary, Data3/binary>> = Data2,
+            decode_prefixed_array(Prefixed_array_data, Data3, Type2)
     end.
 
 decode_bool(Data) ->
@@ -103,7 +120,7 @@ decode_short(Data) ->
     <<Short:16/signed-integer, Data2/binary>> = Data,
     {Data2, Short}.
 decode_ushort(Data) ->
-    <<UShort:16/unsigned-integer, Data2/binary>> = Data,
+    <<UShort:12/unsigned-integer, Data2/binary>> = Data,
     {Data2, UShort}.
 decode_int(Data) ->
     <<Int:32/signed-integer, Data2/binary>> = Data,
@@ -118,7 +135,6 @@ decode_double(Data) ->
     <<Double:64/float, Data2/binary>> = Data,
     {Data2, Double}.
 decode_string(Data) ->
-
     {Length, Data1} = varint:decode_varint(Data),
     <<String:Length/binary, Data2/binary>> = Data1,
     String2 = binary_to_list(String),
@@ -131,7 +147,6 @@ decode_position(Data) ->
     {Data2, {X, Z, Y}}.
 decode_uuid(Data) ->
     <<UUID:128/bitstring, Data2/binary>> = Data,
-    io:format("uuid ~p~n", [UUID]),
     {Data2, UUID}.
 decode_bitset(Data) ->
     {Length, Data2} = varint:decode_varint(Data),
@@ -153,6 +168,16 @@ decode_prefixed_optional(Data, Type) ->
         1 ->
             get_decode_value(Data2, Type)
     end.
+decode_byte_array_end(Data) ->
+    {<<>>, Data}.
+decode_byte_array_chat(Data) ->
+    <<Data2:256/binary, Rest/binary>> = Data,
+    {Rest, Data2}.
+
+
+decode_prefixed_array(Prefixed_array_data, Extra_data, Type) ->
+    Result = decode_message_list(Prefixed_array_data, Type, []),
+    {Extra_data, Result}.
 
 
 
