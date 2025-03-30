@@ -142,8 +142,9 @@ encode_uuid(Data) ->
 
 encode_bitset(Data) ->
     Length = length(Data),
-    Length_of_string = varint:encode_varint(Length),
-    <<(Length_of_string/8)/binary, Data/binary>>.
+    <<Length_of_string/integer>> = varint:encode_varint(Length),
+    Length_of_string2 = Length_of_string/8,
+    <<Length_of_string2/integer, Data/binary>>.
 encode_fixed_bitset(Data) ->
     Length = length(Data),
     Length_of_string = varint:encode_varint(Length),

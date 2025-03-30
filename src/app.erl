@@ -10,7 +10,7 @@
 -export([start/2, stop/1, setup/0]).
 
 start(_StartType, _StartArgs) ->
-
+    application:start(ecli),
     inets:start(),
     ssl:start(),
     mnesia:start(),

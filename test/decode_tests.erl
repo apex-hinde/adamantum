@@ -8,6 +8,6 @@ decode_test() ->
 
 
 convert_message_for_decode(Data) ->
-    {Length, Data2} = varint:decode_varint(Data),
-    {Packet_id, Data3} = varint:decode_varint(Data2),
+    {_, Data2} = varint:decode_varint(Data),
+    {_, Data3} = varint:decode_varint(Data2),
     Data3.

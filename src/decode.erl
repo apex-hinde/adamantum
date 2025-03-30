@@ -98,6 +98,8 @@ get_decode_value(Data, Type) ->
 
         byte_array_end ->
             decode_byte_array_end(Data);
+        byte_array_chat ->
+            decode_byte_array_chat(Data);
         {prefixed_array, Type2} ->
             {Length, Data2} = varint:decode_varint(Data),
             <<Prefixed_array_data:Length/binary, Data3/binary>> = Data2,
@@ -118,7 +120,7 @@ decode_short(Data) ->
     <<Short:16/signed-integer, Data2/binary>> = Data,
     {Data2, Short}.
 decode_ushort(Data) ->
-    <<UShort:16/unsigned-integer, Data2/binary>> = Data,
+    <<UShort:12/unsigned-integer, Data2/binary>> = Data,
     {Data2, UShort}.
 decode_int(Data) ->
     <<Int:32/signed-integer, Data2/binary>> = Data,
@@ -133,7 +135,6 @@ decode_double(Data) ->
     <<Double:64/float, Data2/binary>> = Data,
     {Data2, Double}.
 decode_string(Data) ->
-
     {Length, Data1} = varint:decode_varint(Data),
     <<String:Length/binary, Data2/binary>> = Data1,
     String2 = binary_to_list(String),
@@ -169,6 +170,9 @@ decode_prefixed_optional(Data, Type) ->
     end.
 decode_byte_array_end(Data) ->
     {<<>>, Data}.
+decode_byte_array_chat(Data) ->
+    <<Data2:256/binary, Rest/binary>> = Data,
+    {Rest, Data2}.
 
 
 decode_prefixed_array(Prefixed_array_data, Extra_data, Type) ->

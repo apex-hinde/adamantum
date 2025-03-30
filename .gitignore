@@ -20,6 +20,7 @@ logs
 .idea
 *.iml
 rebar3.crashdump
+ecli
 
 Mnesia.nonode@nohost
 *~

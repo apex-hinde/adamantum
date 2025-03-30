@@ -55,6 +55,7 @@ decode_byte(Data, Acc) ->
     {Name, Data2} = get_nbt_name(Data),
     <<Byte:8, Data3/binary>> = Data2,
     decode_nbt(Data3, [{tag_byte, Name, Byte}|Acc]).
+
 decode_short(Data, Acc) ->
     {Name, Data2} = get_nbt_name(Data),
     <<Short:16, Data3/binary>> = Data2,
@@ -380,11 +381,11 @@ encode_byte_array_list([{_Tag, Value}|Data], Acc) ->
 encode_string_list([{_Tag, Value}|Data], Acc) ->
     Length = length(Value),
     Value2 = list_to_binary(Value),
-    list(Data, <<Acc/binary, Length/binary, Value2/binary>>).
+    list(Data, <<Acc/binary, Length, Value2/binary>>).
 encode_list_list([{_Tag, Value}|Data], Acc) ->
     Length = length(Value),
     Result = list(Value, <<>>),
-    list(Data, <<Acc/binary, Length/binary, Result/binary>>).
+    list(Data, <<Acc/binary, Length, Result/binary>>).
 encode_compound_list([{_Tag, Value}|Data], Acc) ->
     Result = encode(Value),
     list(Data, <<Acc/binary, Result/binary, 0>>).

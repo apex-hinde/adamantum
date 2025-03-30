@@ -9,7 +9,8 @@
         get_messages_clientbound/1,
         get_packet_number_clientbound/1,
         get_configuration_packet_name_clientbound/1,
-        get_configuration_packet_name_serverbound/1]).
+        get_configuration_packet_name_serverbound/1,
+        get_play_packet_name_serverbound/1]).
 
 get_handshake_packet_name(_ID) ->
     handshake.
@@ -118,7 +119,134 @@ get_configuration_packet_name_clientbound(ID) ->
             server_links
     end.
         
-        
+get_play_packet_name_serverbound(ID) ->
+    case ID of
+        0 ->
+            confirm_teleportation;
+        1 ->
+            query_block_entity_tag;
+        2 ->
+            bundle_item_selected;
+        3 ->
+            change_difficulty;
+        4 ->
+            acknowledge_message;
+        5 ->
+            chat_command;
+        6 ->
+            signed_chat_command;
+        7 ->
+            chat_message;
+        8 ->
+            player_session;
+        9 ->
+            chunk_batch_recieved;
+        10 ->
+            client_status;
+        11 ->
+            client_tick_end;
+        12 ->
+            client_information_play;
+        13 ->
+            command_suggestions_request;
+        14 ->
+            acknowledge_configuration;
+        15 ->
+            click_container_button;
+        16 ->
+            click_container;
+        17 ->
+            close_container;
+        18 ->
+            change_container_slot_state;
+        19 ->
+            cookie_response_play;
+        20 ->
+            serverbound_plugin_message_play;
+        21 ->
+            debug_sample_subscription;
+        22 ->
+            edit_book;
+        23 ->
+            quert_entity_tag;
+        24 ->
+            interact;
+        25 ->
+            jigsaw_generate;
+        26 ->
+            serverbound_keep_alive_play;
+        27 ->
+            lock_dificulty;
+        28 ->
+            set_player_position;
+        29 ->
+            set_player_position_and_rotation;
+        30 ->
+            set_player_rotation;
+        31 ->
+            set_player_movement_flags;
+        32 ->
+            move_vehicle;
+        33 ->
+            paddle_boat;
+        34 ->
+            pick_item_from_block;
+        35 ->
+            pick_item_from_entity;
+        36 ->
+            ping_request_play;
+        37 ->
+            place_recipe;
+        38 ->
+            player_abilities_serverbound;
+        39 ->
+            player_action;
+        40 ->
+            player_command;
+        41 ->
+            player_input;
+        42 ->
+            player_loaded;
+        43 ->
+            pong_play;
+        44 ->
+            change_recipe_book_settings;
+        45 ->
+            set_seen_recipe;
+        46 ->
+            rename_item;
+        47 ->
+            resource_pack_responce_play;
+        48 ->
+            seen_advancements;
+        49 ->
+            select_trade;
+        50 ->
+            set_beacon_effect;
+        51 ->
+            set_held_item_serverbound;
+        52 ->
+            program_command_block;
+        53 ->
+            program_command_block_minecart;
+        54 ->
+            set_creative_mode_slot;
+        55 ->
+            program_jigsaw_block;
+        56 ->
+            program_structure_block;
+        57 ->
+            update_sign;
+        58 ->
+            swing_arm;
+        59 ->
+            teleport_to_entity;
+        60 ->
+            use_item_on;
+        61 ->
+            use_item
+
+    end.        
 
 get_packet_number_clientbound(ID) ->
     case ID of
@@ -146,6 +274,8 @@ get_packet_number_clientbound(ID) ->
         custom_report_details_configuration -> 15;
         server_links -> 16
     end.
+
+
 
 get_messages_serverbound(Id) ->
     case Id of
@@ -176,7 +306,54 @@ get_messages_serverbound(Id) ->
         resource_pack_responce_configuration ->
             {resource_pack_responce_configuration, [uuid, varint]};
         serverbound_known_packs ->
-            {serverbound_known_packs, [string, string, string]}
+            {serverbound_known_packs, [string, string, string]};
+        confirm_teleportation ->
+            {confirm_teleportation, [varint]};
+        query_block_entity_tag ->
+            {query_block_entity_tag, [varint, position]};
+        bundle_item_selected ->
+            {bundle_item_selected, [varint, varint]};
+        change_difficulty ->
+            {change_difficulty, [ubyte]};
+        acknowledge_message ->
+            {acknowledge_message, [varint]};
+        chat_command ->
+            {chat_command, [string]};
+        signed_chat_command ->
+            {signed_chat_command, [string, long, long, {prefixed_array, [string, byte_array_chat]}, varint, fixed_bitset]};
+        chat_message ->
+            {chat_message, [string, lomg, long, {prefixed_optional, byte_array_chat, varint, fixed_bitset}]};
+        player_session ->
+            {player_session, [uuid, long, {prefixed_array, [byte]}, {prefixed_array, [byte]}]};
+        chunk_batch_recieved ->
+            {chunk_batch_recieved, [float]};
+        client_status ->
+            {client_status, [varint]};
+        client_tick_end ->
+            {client_tick_end, []};
+        client_information_play ->
+            {client_information_play, [string, byte, varint, bool, ubyte, varint, bool, bool, varint]};
+        command_suggestions_request ->
+            {command_suggestions_request, [varint, string]};
+        acknowledge_configuration ->
+            {acknowledge_configuration, []};
+        click_container_button ->
+            {click_container_button, [varint, varint]};
+        click_container ->
+            {click_container, [varint, varint, short, byte, varint, {prefixed_array, [short, slot]}, slot]};
+        close_container ->
+            {close_container, [varint]};
+        change_container_slot_state ->
+            {change_container_slot_state, [varint, varint, byte]};
+        cookie_response_play ->
+            {cookie_response_play, [identifier, {prefixed_array, [byte]}]};
+        serverbound_plugin_message_play ->
+            {plugin_message_play, [identifier, byte_array_end]};
+        debug_sample_subscription ->
+            {debug_sample_subscription, [varint]};
+        edit_book ->
+            {edit_book, [varint, {prefixed_array, [string]}, {prefixed_optional, string}]}
+
 
     end.
 
