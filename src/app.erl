@@ -11,7 +11,6 @@
 
 start(_StartType, _StartArgs) ->
     application:start(ecli),
-    inets:start(),
     ssl:start(),
     mnesia:start(),
 %    chunk_manager:setup(),

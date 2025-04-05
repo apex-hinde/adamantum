@@ -89,7 +89,6 @@ handle_info(_Info, State) ->
 
 
 %db functions
-
 setup() ->
     mnesia:create_table(db_mnesia_player,
                         [{attributes, record_info(fields, db_mnesia_player)},
@@ -99,10 +98,6 @@ clear_player_table() ->
     mnesia:clear_table(db_mnesia_player).
 
 
-
-
-    
-
 send_to_all_players(Message, State) ->
     Player_list = maps:to_list(State#state.connected_players),
-    lists:foreach(fun({_, PID}) -> gen_server:cast(PID, Message) end, Player_list).
+    lists:foreach(fun({_, PID}) -> player:tick(PID, Message) end, Player_list).

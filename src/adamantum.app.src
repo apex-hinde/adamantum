@@ -5,7 +5,9 @@
     {mod, {app, []}},
     {applications, [
         kernel,
-        stdlib
+        stdlib,
+        ecli,
+        inets
     ]},
     {env, []},
     {modules, []},

@@ -9,7 +9,8 @@
         code_change/3,
         handle_cast/2,
         handle_call/3,
-        handle_info/2]).
+        handle_info/2,
+        tick/2]).
 
 -include("records.hrl").
 
@@ -22,7 +23,13 @@
 -define(CONFIGURATION, 4).
 -define(PLAY, 5).
 
--record(state, {listen_pid, listen_socket, player_socket, queue, state_of_play = ?HANDSHAKE, db_key}).
+-record(state, {listen_pid, listen_socket, player_socket, queue, state_of_play = ?HANDSHAKE, db_key, keep_alive}).
+
+%% API
+tick(Pid, Message) ->
+    gen_server:cast(Pid, Message).
+
+
 
 stop(Name) ->
     gen_server:call(Name, stop).
@@ -47,22 +54,19 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
-handle_cast(Req, State) ->
-    NewState =
-        case Req of
-            {login_success, Data} ->
-                send_message(Data, State),
-                State;
-            {finish_configuration, Data} ->
-                send_message(Data, State),
-                State
-        end,
-    {noreply, NewState}.
-
+handle_cast(_Req, State) ->
+    {noreply, State}.
+    
 handle_info(run_accept, State) ->
     {ok, Socket} = gen_tcp:accept(State#state.listen_socket),
     gen_server:cast(State#state.listen_pid, connected),
     {noreply, State#state{player_socket = Socket}};
+
+handle_info(keep_alive, State) ->
+    erlang:send_after(5000, self(), keep_alive),
+    Random = rand:uniform(1000),
+    send_message(Random, serverbound_keep_alive_play, State),
+    {noreply, State#state{keep_alive = Random}};
 
 handle_info({tcp, _Socket, Data}, State) ->
 
@@ -127,6 +131,7 @@ process_message(Data, State) ->
 
 
 handle_decoded_message(Data, State) ->
+    NewState = 
     case Data of
         {handshake, [_Protocol_version, _Server_address, _Server_port, Next_state]} ->
             State#state{state_of_play = Next_state};
@@ -143,7 +148,7 @@ handle_decoded_message(Data, State) ->
             end,
             
             {Name, Value} = mojang_api:get_profile(Non_local_UUID),
-            encode_message([Local_UUID, Username, {Name, Value}], login_success),
+            send_message([Local_UUID, Username, {Name, Value}], login_success, State),
             
             State#state{db_key = Non_local_UUID};
         {encryption_response, [_Shared_secret, _Verify_token]} ->
@@ -153,29 +158,42 @@ handle_decoded_message(Data, State) ->
             State;
         {login_acknowledged, []} ->
             State#state{state_of_play = ?CONFIGURATION};
-%% not implimented
         {cookie_reponse_login, [_Key, [_Payload]]} ->
             State;
-%% not implimented
         {client_information, [_Locale, _View_distance, _Chat_mode, _Chat_colours, _Displayed_skin_parts, _Main_hand, _Enable_text_filtering, _Allow_server_listings, _Particle_status]} ->
             State;
         {cookie_response_configuration, [_Key, [_Payload]]} ->
             State;
         {serverbound_plugin_message_configuration, [_Channel, _Data]} ->
-            encode_message([], finish_configuration),
+            send_message([], finish_configuration, State),
             State;
         {acknowledge_finish_configuration, []} ->
-            State#state{state_of_play = ?PLAY}
-        end.
+            erlang:send_after(5000, self(), keep_alive),
 
-send_message(Message, State) ->
+            State#state{state_of_play = ?PLAY};
+        {serverbound_keep_alive_play, [Keep_alive_id]} ->
+            if(State#state.keep_alive =/= Keep_alive_id) ->
+                stop(self());
+            true ->
+                State
+            end,
+            State;
+
+%% if type == 2 will match with the second one
+        {interact, [_Entity_ID, _Type, _Sneak_key_pressed]} ->
+            State;
+        {interact, [_Entity_ID, {_Type, _Target_X, _Target_Y, _Target_Z, _Hand}, _Sneak_key_pressed]} ->
+            State
+        end,
+    NewState.
+
+send_message(Data, Packet_name, State) ->
+    Message = encode:encode_message(Data, Packet_name),
     Length = varint:encode_varint(byte_size(Message)),
-
     gen_tcp:send(State#state.player_socket, <<Length/binary, Message/binary>>).
 
-encode_message(Data, Packet_name) ->
-    {_, Data2} = encode:encode_message(Data, Packet_name),
-    gen_server:cast(self(), {Packet_name, Data2}).
+
+    
 
 
 

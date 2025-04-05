@@ -90,6 +90,7 @@ get_decode_value(Data, Type) ->
 %            decode_chunk_data(Data);
 %        light_data ->
 %            decode_light_data(Data)
+
         {prefixed_optional, Type2} ->
             decode_prefixed_optional(Data, Type2);
 
@@ -103,7 +104,11 @@ get_decode_value(Data, Type) ->
         {prefixed_array, Type2} ->
             {Length, Data2} = varint:decode_varint(Data),
             <<Prefixed_array_data:Length/binary, Data3/binary>> = Data2,
-            decode_prefixed_array(Prefixed_array_data, Data3, Type2)
+            decode_prefixed_array(Prefixed_array_data, Data3, Type2);
+
+%% custom
+        interact ->
+            decode_interact(Data)
     end.
 
 decode_bool(Data) ->
@@ -120,7 +125,7 @@ decode_short(Data) ->
     <<Short:16/signed-integer, Data2/binary>> = Data,
     {Data2, Short}.
 decode_ushort(Data) ->
-    <<UShort:12/unsigned-integer, Data2/binary>> = Data,
+    <<UShort:16/unsigned-integer, Data2/binary>> = Data,
     {Data2, UShort}.
 decode_int(Data) ->
     <<Int:32/signed-integer, Data2/binary>> = Data,
@@ -178,6 +183,22 @@ decode_byte_array_chat(Data) ->
 decode_prefixed_array(Prefixed_array_data, Extra_data, Type) ->
     Result = decode_message_list(Prefixed_array_data, Type, []),
     {Extra_data, Result}.
+
+decode_interact(Data) ->
+    {Type, Data2} = varint:decode_varint(Data),
+    case Type of
+        2->
+            {Data3, Target_X} = decode_float(Data2),
+            {Data4, Target_Y} = decode_float(Data3),
+            {Data5, Target_Z} = decode_float(Data4),
+            {Hand, Data6} = varint:decode_varint(Data5),
+            {Data6, {Type, Target_X, Target_Y, Target_Z, Hand}};
+        _->
+            {Data2, Type}
+    end.
+
+    
+
 
 
 

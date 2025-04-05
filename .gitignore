@@ -21,6 +21,7 @@ logs
 *.iml
 rebar3.crashdump
 ecli
+.DS_Store
 
 Mnesia.nonode@nohost
 *~

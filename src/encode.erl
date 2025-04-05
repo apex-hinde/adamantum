@@ -1,6 +1,8 @@
 -module(encode).
 -export([encode_message/2]).
 
+-spec encode_text_component(string()) -> binary().
+
 encode_message(Data, Packet_name) ->
     {Packet_name, Param_list} = data_packets:get_messages_clientbound(Packet_name),
     Data2 = encode_message_list(Data, Param_list,  <<>>),
@@ -8,8 +10,8 @@ encode_message(Data, Packet_name) ->
     Packet_ID = data_packets:get_packet_number_clientbound(Packet_name),
     Data3 = <<Packet_ID:8, Data2/binary>>,
 
-    {Packet_name, Data3}.
-encode_message_list([], [], Acc) ->
+    Data3.
+encode_message_list([], _, Acc) ->
     Acc;
 
 encode_message_list([Data|T_data], [H|T],  Acc) ->
@@ -40,8 +42,8 @@ get_encode_value(Data, Type) ->
             encode_double(Data);
         string ->
             encode_string(Data);
-%        text_component ->
-%            encode_text_component(Data);
+        text_component ->
+            encode_text_component(Data);
 %        json_text_component ->
 %           encode_json_text_component(Data);
         identifier ->
@@ -83,7 +85,10 @@ get_encode_value(Data, Type) ->
 %        light_data ->
 %            encode_light_data(Data)
         prefixed_array_login ->
-            encode_prefixed_array_login(Data)
+            encode_prefixed_array_login(Data);
+        boss_bar ->
+            encode_boss_bar(Data)
+
     end.
 
 encode_bool(Data) ->
@@ -128,8 +133,10 @@ encode_string(Data) ->
         end,
 
     Length = varint:encode_varint(byte_size(Data2)),
-
     <<Length/binary, Data2/binary>>.
+%% currently only implemented basic text, need to add colour and such later
+encode_text_component(Data) ->
+    iolist_to_binary(json:encode(#{text => Data})).
 
 encode_varint(Data) ->
     varint:encode_varint(Data).
@@ -162,4 +169,37 @@ encode_prefixed_array_login({_Name, _Value}) ->
 %    Length = varint:encode_varint(byte_size(Data)),
 %    <<Length/binary, Data/binary>>.
     <<0:8>>.
+%% boss bar is a list containing action and data, data being another list
+encode_boss_bar([Action, Data]) ->
+    Result = 
+        case Action of
+            0 -> 
+                [Title, Health, Color, Division, Flags] = Data,
+                <<Result1/binary>> = encode_text_component(Title),
+                <<Result2/binary>> = encode_float(Health),
+                <<Result3/binary>> = encode_varint(Color),
+                <<Result4/binary>> = encode_varint(Division),
+                <<Result5/binary>> = encode_ubyte(Flags),
+                <<Result1/binary, Result2/binary, Result3/binary, Result4/binary, Result5/binary>>;
+            1 ->
+                <<>>;
+            2 ->
+                [Health] = Data,
+                encode_float(Health);
+            3 ->
+                [Title] = Data,
+                encode_text_component(Title);
+            4 ->
+                [Color, Dividers] = Data,
+                <<Result1/binary>> = encode_varint(Color),
+                <<Result2/binary>> = encode_varint(Dividers),
+                <<Result1/binary, Result2/binary>>;
+
+            5 ->
+                [Flags] = Data,
+                encode_ubyte(Flags)
+            end,
+    <<Action:8, Result/binary>>.
+
+    
 
