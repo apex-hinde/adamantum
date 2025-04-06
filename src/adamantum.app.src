@@ -1,16 +1,16 @@
-{application, adamantum,
- [{description, "An OTP application"},
-  {vsn, "0.1.0"},
-  {registered, []},
-  {mod, {adamantum_app, []}},
-
-  {applications,
-   [kernel,
-    stdlib
-   ]},
-  {env,[]},
-  {modules, []},
-
-  {licenses, ["Apache-2.0"]},
-  {links, []}
+{application, adamantum, [
+    {description, "An OTP application"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        ecli,
+        inets
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, []}
  ]}.

@@ -1,1 +1,13 @@
-[].
+[{<<"ecli">>,
+  {git,"https://github.com/mgmtd/ecli",
+       {ref,"675938a7cc141d5df191cbf41ebad5071dfb3f9e"}},
+  0},
+ {<<"eqwalizer_support">>,
+  {git_subdir,"https://github.com/whatsapp/eqwalizer.git",
+              {ref,"2423ba1ad0c399cc867d8d9b4de8d345b001b710"},
+              "eqwalizer_support"},
+  0},
+ {<<"nbtea">>,
+  {git,"https://github.com/apex-hinde/NBTea",
+       {ref,"771201c58115ae756f77fcc2dbd68b590dbfebc7"}},
+  0}].

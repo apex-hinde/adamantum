@@ -1,4 +1,4 @@
--module(adamantum_player_manager).
+-module(player_manager).
 -behaviour(gen_server).
 -define(SERVER, ?MODULE).
 
@@ -28,8 +28,15 @@ stop() ->
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+%% API
 connect_to_PM(UUID, PID) ->
     gen_server:cast(?SERVER, {connect, UUID, PID}).
+
+write_to_db(UUID, Data) ->
+    gen_server:cast(?SERVER, {write_to_db, UUID, Data}).
+
+read_from_db(Key) ->
+    gen_server:call(?SERVER, {read_from_db, Key}).
 
 
 init(_Args) ->
@@ -45,12 +52,21 @@ code_change(_OldVsn, State, _Extra) ->
 
 handle_call(stop, _From, State) ->
     {stop, normal, stopped, State};
-
+handle_call({read_from_db, Key}, _From, State) ->
+    Return = 
+        case mnesia:dirty_read(db_mnesia_player, Key) of 
+            [] -> 
+                [];
+            [DB] ->
+                DB#db_mnesia_player.data
+        end,
+    {reply, Return, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
     
 handle_cast({connect, UUID, PID}, State) ->
-    {noreply, State#state{connected_players = maps:put(UUID, PID, State#state.connected_players)}};
+    erlang:monitor(process, PID),
+    {noreply, State#state{connected_players = maps:put(PID, UUID, State#state.connected_players)}};
 
 
 handle_cast({write_to_db, UUID, Data}, State) ->
@@ -66,6 +82,8 @@ handle_info(tick, State) ->
     erlang:send_after(50, self(), tick),
     send_to_all_players(tick, State),
     {noreply, State};
+handle_info({'DOWN',_Reference,_Type,PID,_Info}, State) ->
+     State#state{connected_players = maps:remove(PID, State#state.connected_players)};
 
 
 
@@ -74,7 +92,6 @@ handle_info(_Info, State) ->
 
 
 %db functions
-
 setup() ->
     mnesia:create_table(db_mnesia_player,
                         [{attributes, record_info(fields, db_mnesia_player)},
@@ -83,19 +100,7 @@ setup() ->
 clear_player_table() ->
     mnesia:clear_table(db_mnesia_player).
 
-write_to_db(UUID, Data) ->
-    gen_server:cast(?SERVER, {write_to_db, UUID, Data}).
-
-read_from_db(Key) -> 
-
-    case mnesia:dirty_read({db_mnesia_player, Key}) of 
-        [] -> 
-            [];
-        [DB] ->
-            DB#db_mnesia_player.data
-    end.
 
 send_to_all_players(Message, State) ->
-    Player_list = maps:to_list(State#state.connected_players),
-    lists:foreach(fun({_, PID}) -> gen_server:cast(PID, Message) end, Player_list).
-
+    Player_list = maps:keys(State#state.connected_players),
+    lists:foreach(fun({_, PID}) -> player:tick(PID, Message) end, Player_list).
