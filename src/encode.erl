@@ -68,8 +68,8 @@ get_encode_value(Data, Type) ->
             encode_bitset(Data);
         fixed_bitset ->
             encode_fixed_bitset(Data);
-        prefixed_array ->
-            encode_prefixed_array(Data);
+        {prefixed_array, Types} ->
+            encode_prefixed_array(Data, Types);
 %        in_set ->
 %            encode_in_set(Data);
 %        sound_event ->
@@ -87,7 +87,9 @@ get_encode_value(Data, Type) ->
         prefixed_array_login ->
             encode_prefixed_array_login(Data);
         boss_bar ->
-            encode_boss_bar(Data)
+            encode_boss_bar(Data);
+        binary ->
+            Data
 
     end.
 
@@ -157,10 +159,17 @@ encode_fixed_bitset(Data) ->
     Length_of_string = varint:encode_varint(Length),
     <<Length_of_string/binary, Data/binary>>.
 
-encode_prefixed_array(Data) ->
+encode_prefixed_array(Data, Types) ->
     Length = length(Data),
-    Length_of_string = varint:encode_varint(Length),
-    <<Length_of_string/binary, Data/binary>>.
+    encode_prefixed_array(Data, Types, <<Length>>).
+
+encode_prefixed_array([], _, Acc) ->
+    Acc;
+
+encode_prefixed_array([H|T], Types, Acc) ->
+    Result = encode_message_list(H, Types, <<>>),
+    encode_prefixed_array(T, Types, <<Acc/binary, Result/binary>>).
+
 encode_prefixed_array_login({_Name, _Value}) ->
 %    io:format("why of why~p~n", [{Name, Value}]),
 %    Length_of_name = varint:encode_varint(byte_size(Name)),

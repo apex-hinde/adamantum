@@ -14,9 +14,8 @@ decode_message(Data, Packet_name) ->
 decode_message_list(<<>>, [], Acc) ->
     lists:reverse(Acc);
 
-decode_message_list(_Data, [], _Acc) ->
-    io:format("~p~n", ["decode error"]);
-
+decode_message_list(Data, [], Acc) ->
+    {Data, Acc};
 decode_message_list(Data, [H|T],  Acc) ->
 
     {Data2, Result} = get_decode_value(Data, H),
@@ -74,8 +73,6 @@ get_decode_value(Data, Type) ->
             decode_bitset(Data);
         fixed_bitset ->
             decode_fixed_bitset(Data);
-        prefixed_array ->
-            decode_prefixed_array(Data);
 %        in_set ->
 %            decode_in_set(Data);
 %        sound_event ->
@@ -102,9 +99,7 @@ get_decode_value(Data, Type) ->
         byte_array_chat ->
             decode_byte_array_chat(Data);
         {prefixed_array, Type2} ->
-            {Length, Data2} = varint:decode_varint(Data),
-            <<Prefixed_array_data:Length/binary, Data3/binary>> = Data2,
-            decode_prefixed_array(Prefixed_array_data, Data3, Type2);
+            decode_prefixed_array(Data, Type2);
 
 %% custom
         interact ->
@@ -161,10 +156,7 @@ decode_fixed_bitset(Data) ->
     {Length, Data2} = varint:decode_varint(Data),
     <<Bit_set:Length/signed-integer, Data3/binary>> = Data2,
     {Data3, Bit_set}.
-decode_prefixed_array(Data) ->
-    {Length, Data2} = varint:decode_varint(Data),
-    <<Prefixed_array:Length, Data3/binary>> = Data2,
-    {Data3, Prefixed_array}.
+
 decode_prefixed_optional(Data, Type) ->
     <<Bool:8, Data2/binary>> = Data,
     case Bool of
@@ -179,10 +171,23 @@ decode_byte_array_chat(Data) ->
     <<Data2:256/binary, Rest/binary>> = Data,
     {Rest, Data2}.
 
+decode_prefixed_array(Data, Types) ->
+    {Length, Data2} = varint:decode_varint(Data),
+    decode_prefixed_array(Data2, Types, Length, []).
 
-decode_prefixed_array(Prefixed_array_data, Extra_data, Type) ->
-    Result = decode_message_list(Prefixed_array_data, Type, []),
-    {Extra_data, Result}.
+decode_prefixed_array(Data, _Types, 0, [Acc]) ->
+
+    {Data, lists:reverse(Acc)};
+
+decode_prefixed_array(Data, Types, Length, Acc) ->
+    case decode_message_list(Data, Types, []) of
+        {Rest, Result} ->
+            decode_prefixed_array(Rest, Types, Length-1, [Result|Acc]);
+        Result ->
+            decode_prefixed_array(<<>>, Types, Length-1, [Result|Acc])
+    end.
+
+
 
 decode_interact(Data) ->
     {Type, Data2} = varint:decode_varint(Data),

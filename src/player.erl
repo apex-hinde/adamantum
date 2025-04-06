@@ -89,7 +89,6 @@ handle_info({tcp, _Socket, Data}, State) ->
     {noreply, NewState}.
 
 message(Data, State) ->
-    io:format("~p~n", [Data]),
     {Length, Data2} = varint:decode_varint(Data),
     Length_of_data = byte_size(Data2),
     NewState = 
@@ -109,21 +108,35 @@ process_message(Data, State) ->
     case State#state.state_of_play of        
         ?HANDSHAKE ->
             Packet_name = data_packets:get_handshake_packet_name(Packet_ID),
+            io:format("~p : ", [Packet_name]),
+            io:format("~p~n", [Data]),
             Decoded = decode:decode_message(Data2, Packet_name),
             handle_decoded_message({Packet_name, Decoded}, State);
             
         ?STATUS ->
             Packet_name = data_packets:get_status_packet_name_clientbound(Packet_ID),
+            io:format("~p : ", [Packet_name]),
+            io:format("~p~n", [Data]),
             Decoded = decode:decode_message(Data2, Packet_name),
             handle_decoded_message({Packet_name, Decoded}, State);
             
         ?LOGIN ->
             Packet_name = data_packets:get_login_packet_name_serverbound(Packet_ID),
+            io:format("~p : ", [Packet_name]),
+            io:format("~p~n", [Data]),
             Decoded = decode:decode_message(Data2, Packet_name),
             handle_decoded_message({Packet_name, Decoded}, State);
             
         ?CONFIGURATION ->
             Packet_name = data_packets:get_configuration_packet_name_serverbound(Packet_ID),
+            io:format("~p : ", [Packet_name]),
+            io:format("~p~n", [Data]),
+            Decoded = decode:decode_message(Data2, Packet_name),
+            handle_decoded_message({Packet_name, Decoded}, State);
+        ?PLAY ->
+            Packet_name = data_packets:get_play_packet_name_serverbound(Packet_ID),
+            io:format("~p : ", [Packet_name]),
+            io:format("~p~n", [Data]),
             Decoded = decode:decode_message(Data2, Packet_name),
             handle_decoded_message({Packet_name, Decoded}, State)
     end.
@@ -141,10 +154,9 @@ handle_decoded_message(Data, State) ->
             case player_manager:read_from_db(Non_local_UUID) of
                 [] ->
                     Player2 = #db_player{uuid = Local_UUID, username = Username, eid = 1, gamemode = 1, coords = {0, 100, 0, 0, 0}, current_slot = 0, dimension = 0},
-                    player_manager:write_to_db(Non_local_UUID, Player2),
-                    Player2;
-                Player2 ->
-                    Player2
+                    player_manager:write_to_db(Non_local_UUID, Player2);
+                _ ->
+                    ok
             end,
             
             {Name, Value} = mojang_api:get_profile(Non_local_UUID),
@@ -157,6 +169,7 @@ handle_decoded_message(Data, State) ->
             
             State;
         {login_acknowledged, []} ->
+            send_message([[["minecraft", "core", "1.21.4"]]], clientbound_known_packs, State),
             State#state{state_of_play = ?CONFIGURATION};
         {cookie_reponse_login, [_Key, [_Payload]]} ->
             State;
@@ -165,11 +178,33 @@ handle_decoded_message(Data, State) ->
         {cookie_response_configuration, [_Key, [_Payload]]} ->
             State;
         {serverbound_plugin_message_configuration, [_Channel, _Data]} ->
-            send_message([], finish_configuration, State),
             State;
         {acknowledge_finish_configuration, []} ->
+            Player = player_manager:read_from_db(State#state.db_key),
+            send_message(
+            [
+                Player#db_player.eid, 
+                false,%
+                [["minecraft:overworld"]],
+                configuration:get_configuration(max_players),
+                configuration:get_configuration(render_distance),
+                configuration:get_configuration(render_distance),
+                true,
+                true,
+                false,
+                0,
+                "minecraft:overworld",
+                <<8,5,2,2,3,2,2,6>>,
+                Player#db_player.gamemode,
+                Player#db_player.gamemode,
+                false,
+                true,
+                false,
+                0,
+                20,
+                false
+            ], login_play, State),
             erlang:send_after(5000, self(), keep_alive),
-
             State#state{state_of_play = ?PLAY};
         {serverbound_keep_alive_play, [Keep_alive_id]} ->
             if(State#state.keep_alive =/= Keep_alive_id) ->
@@ -177,6 +212,13 @@ handle_decoded_message(Data, State) ->
             true ->
                 State
             end,
+            State;
+        {serverbound_known_packs, [[_Name_space, _ID, _Version]]} ->
+            Directory = code:priv_dir(adamantum),
+            {ok, Filenames} = file:list_dir(Directory),
+            lists:foreach(fun(File) -> send_registry(State, File) end, Filenames),
+            send_registry(State, "trim_material"),
+            send_message([], finish_configuration, State),
             State;
 
 %% if type == 2 will match with the second one
@@ -190,11 +232,33 @@ handle_decoded_message(Data, State) ->
 send_message(Data, Packet_name, State) ->
     Message = encode:encode_message(Data, Packet_name),
     Length = varint:encode_varint(byte_size(Message)),
+    io:format("sent message : ~p~n", [Message]),
     gen_tcp:send(State#state.player_socket, <<Length/binary, Message/binary>>).
 
 
-    
 
 
 
+
+
+
+
+
+
+send_registry(State, Name) ->
+    Identifier = string:concat("minecraft:", Name),
+    {ok, Data} = file:read_file(Filename),
+    Decoded = json:decode(Data),
+    Data2 = maps:get(list_to_binary(Identifier), Decoded),
+    Interator = maps:iterator(Data2),
+    Result = parse_registry(Interator, []),
+    send_message([Identifier, length(Result), Result], registry_data, State).
+
+parse_registry(Iterator, Acc) ->
+    case maps:next(Iterator) of
+        {Key, Value, NewIterator} ->
+            parse_registry(NewIterator, [[Key, true, json:encode(Value)]|Acc]);
+        _ ->
+            lists:reverse(Acc)
+    end.
     

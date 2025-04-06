@@ -65,7 +65,8 @@ handle_call(_Request, _From, State) ->
     {reply, ok, State}.
     
 handle_cast({connect, UUID, PID}, State) ->
-    {noreply, State#state{connected_players = maps:put(UUID, PID, State#state.connected_players)}};
+    erlang:monitor(process, PID),
+    {noreply, State#state{connected_players = maps:put(PID, UUID, State#state.connected_players)}};
 
 
 handle_cast({write_to_db, UUID, Data}, State) ->
@@ -81,6 +82,8 @@ handle_info(tick, State) ->
     erlang:send_after(50, self(), tick),
     send_to_all_players(tick, State),
     {noreply, State};
+handle_info({'DOWN',_Reference,_Type,PID,_Info}, State) ->
+     State#state{connected_players = maps:remove(PID, State#state.connected_players)};
 
 
 
@@ -99,5 +102,5 @@ clear_player_table() ->
 
 
 send_to_all_players(Message, State) ->
-    Player_list = maps:to_list(State#state.connected_players),
+    Player_list = maps:keys(State#state.connected_players),
     lists:foreach(fun({_, PID}) -> player:tick(PID, Message) end, Player_list).

@@ -10,7 +10,8 @@
         get_packet_number_clientbound/1,
         get_configuration_packet_name_clientbound/1,
         get_configuration_packet_name_serverbound/1,
-        get_play_packet_name_serverbound/1]).
+        get_play_packet_name_serverbound/1,
+        get_play_packet_name_clientbound/1]).
 
 get_handshake_packet_name(_ID) ->
     handshake.
@@ -705,7 +706,7 @@ get_messages_serverbound(Id) ->
         resource_pack_responce_configuration ->
             {resource_pack_responce_configuration, [uuid, varint]};
         serverbound_known_packs ->
-            {serverbound_known_packs, [string, string, string]};
+            {serverbound_known_packs, [{prefixed_array, [string, string, string]}]};
         confirm_teleportation ->
             {confirm_teleportation, [varint]};
         query_block_entity_tag ->
@@ -862,7 +863,7 @@ get_messages_clientbound(Id) ->
         reset_chat ->
             {reset_chat, []};
         registry_data ->
-            {registry_data, [identifier, {prefixed_array, [identifier, {prefixed_optional, nbt}]}]};
+            {registry_data, [identifier, {prefixed_array, [identifier, {prefixed_optional, binary}]}]};
         remove_resource_pack_configuration ->
             {remove_resource_pack_configuration, [{prefixed_optional, uuid}]};
         add_resource_pack_configuration ->
@@ -955,7 +956,8 @@ get_messages_clientbound(Id) ->
         world_event -> 41;
         particle -> 42;
         update_light -> 43;
-        login_play -> 44;
+        login_play -> 
+            {login_play, [int, bool, {prefixed_array, [identifier]}, varint, varint, varint, bool, bool, bool, varint, identifier, binary, ubyte, byte, bool, bool, bool, varint, varint, bool]};
         map_data -> 45;
         merchant_offers -> 46;
         update_entity_position -> 47;
