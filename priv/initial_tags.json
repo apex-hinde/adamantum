@@ -1,0 +1,11 @@
+{
+    "minecraft:biome":{
+        "minecraft:is_badlands": {
+            "tags": [
+                "minecraft:badlands",
+                "minecraft:badlands_plateau",
+                "minecraft:wooded_badlands_plateau"
+            ]
+        }
+    }
+}

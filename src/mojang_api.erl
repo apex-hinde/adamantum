@@ -25,7 +25,6 @@ get_player_uuid(Username) ->
     case httpc:request(get, {Request, []}, [], []) of   
         {error, Reason} -> 
             io:format("Error: ~p~n", [Reason]);
-
         {ok, {{_Version, 200, _ReasonPhrase}, _Headers, Body}} ->
             Json = json:decode(list_to_binary(Body)),
             maps:get(<<"id">>, Json)

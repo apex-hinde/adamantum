@@ -159,8 +159,8 @@ handle_decoded_message(Data, State) ->
                     ok
             end,
             
-            {Name, Value} = mojang_api:get_profile(Non_local_UUID),
-            send_message([Local_UUID, Username, {Name, Value}], login_success, State),
+%            {Name, Value} = mojang_api:get_profile(Non_local_UUID),
+            send_message([Local_UUID, Username, {0,0}], login_success, State),
             
             State#state{db_key = Non_local_UUID};
         {encryption_response, [_Shared_secret, _Verify_token]} ->
@@ -215,9 +215,11 @@ handle_decoded_message(Data, State) ->
             State;
         {serverbound_known_packs, [[_Name_space, _ID, _Version]]} ->
             Directory = code:priv_dir(adamantum),
-            {ok, Filenames} = file:list_dir(Directory),
-            lists:foreach(fun(File) -> send_registry(State, File) end, Filenames),
-            send_registry(State, "trim_material"),
+            Dir = string:concat(Directory, "/registries"),
+            {ok, Filenames} = file:list_dir(Dir),
+          
+            lists:foreach(fun(File) -> send_registry(State, File, Dir) end, Filenames),
+            send_tags(State, Directory),
             send_message([], finish_configuration, State),
             State;
 
@@ -232,7 +234,7 @@ handle_decoded_message(Data, State) ->
 send_message(Data, Packet_name, State) ->
     Message = encode:encode_message(Data, Packet_name),
     Length = varint:encode_varint(byte_size(Message)),
-    io:format("sent message : ~p~n", [Message]),
+    io:format("sent message : ~p~n", [<<Length/binary, Message/binary>>]),
     gen_tcp:send(State#state.player_socket, <<Length/binary, Message/binary>>).
 
 
@@ -245,20 +247,36 @@ send_message(Data, Packet_name, State) ->
 
 
 
-send_registry(State, Name) ->
-    Identifier = string:concat("minecraft:", Name),
-    {ok, Data} = file:read_file(Filename),
-    Decoded = json:decode(Data),
-    Data2 = maps:get(list_to_binary(Identifier), Decoded),
-    Interator = maps:iterator(Data2),
-    Result = parse_registry(Interator, []),
-    send_message([Identifier, length(Result), Result], registry_data, State).
+send_registry(State, File, Directory) ->
+    
+    FileName = string:concat(Directory, "/"),
+    FileName2 = string:concat(FileName, File),
+    [Name|_] = string:split(File, "."),
+    if Name =:= "worldgen_biome" ->
+        gen_tcp:send(State#state.player_socket, registry_defaults:get_world_packet());
+    true ->
+        Identifier = string:concat("minecraft:", Name),
+        {ok, Data} = file:read_file(FileName2),
+        Decoded = json:decode(Data),
+        Data2 = maps:get(list_to_binary(Identifier), Decoded),
+        Interator = maps:iterator(Data2),
+        Result = parse_registry(Interator, []),
+        send_message([Identifier, Result], registry_data, State)
+    end.
+
 
 parse_registry(Iterator, Acc) ->
     case maps:next(Iterator) of
         {Key, Value, NewIterator} ->
-            parse_registry(NewIterator, [[Key, true, json:encode(Value)]|Acc]);
+            parse_registry(NewIterator, [[Key, <<>>]|Acc]);
+
+%            parse_registry(NewIterator, [[Key, iolist_to_binary(json:encode(Value))]|Acc]);
         _ ->
             lists:reverse(Acc)
     end.
     
+send_tags(State, Directory) ->
+    FileName = string:concat(Directory, "/initial_tags"),
+    {ok, Data} = file:read_file(FileName),
+    Decoded = json:decode(Data),
+    Data2 = maps:get(list_to_binary("minecraft:biome"), Decoded).

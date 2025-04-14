@@ -1,5 +1,6 @@
 {
     "minecraft:worldgen/biome": {
+    "minecraft:pale_garden":{},
     "minecraft:badlands": {
       "downfall": 0.0,
       "effects": {

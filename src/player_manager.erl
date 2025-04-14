@@ -16,7 +16,7 @@
         write_to_db/2,
         read_from_db/1,
         connect_to_PM/2]).
--record(state, {connected_players}).
+-record(state, {}).
 
 -record(db_mnesia_player, {uuid, data}).
 
@@ -40,8 +40,9 @@ read_from_db(Key) ->
 
 
 init(_Args) ->
+    ets:new(player_table, [named_table]),
     erlang:send_after(50, self(), tick),
-    {ok, #state{connected_players = maps:new()}}.
+    {ok, #state{}}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -66,7 +67,8 @@ handle_call(_Request, _From, State) ->
     
 handle_cast({connect, UUID, PID}, State) ->
     erlang:monitor(process, PID),
-    {noreply, State#state{connected_players = maps:put(PID, UUID, State#state.connected_players)}};
+    ets:insert(player_table, {PID, UUID}),
+    {noreply, State};
 
 
 handle_cast({write_to_db, UUID, Data}, State) ->
@@ -80,13 +82,12 @@ handle_cast(_Req, State) ->
 
 handle_info(tick, State) ->
     erlang:send_after(50, self(), tick),
-    send_to_all_players(tick, State),
+    send_to_all_players(tick),
     {noreply, State};
 handle_info({'DOWN',_Reference,_Type,PID,_Info}, State) ->
-     State#state{connected_players = maps:remove(PID, State#state.connected_players)};
-
-
-
+    ets:delete(player_table, PID),
+    {noreply, State};
+    
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -101,6 +102,14 @@ clear_player_table() ->
     mnesia:clear_table(db_mnesia_player).
 
 
-send_to_all_players(Message, State) ->
-    Player_list = maps:keys(State#state.connected_players),
-    lists:foreach(fun({_, PID}) -> player:tick(PID, Message) end, Player_list).
+send_to_all_players(Message) ->
+    PID = 
+        case ets:tab2list(player_table) of
+            [] ->
+                [];
+            {ok, List} ->
+                List
+
+        end,
+
+    lists:foreach(fun(Pid) -> player:tick(Pid, Message) end, PID).

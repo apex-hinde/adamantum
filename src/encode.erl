@@ -70,6 +70,8 @@ get_encode_value(Data, Type) ->
             encode_fixed_bitset(Data);
         {prefixed_array, Types} ->
             encode_prefixed_array(Data, Types);
+        {prefixed_optional, Type2} ->
+            encode_prefixed_optional(Data, Type2);
 %        in_set ->
 %            encode_in_set(Data);
 %        sound_event ->
@@ -160,6 +162,7 @@ encode_fixed_bitset(Data) ->
     <<Length_of_string/binary, Data/binary>>.
 
 encode_prefixed_array(Data, Types) ->
+    io:format("~p~n", [Data]),
     Length = length(Data),
     encode_prefixed_array(Data, Types, <<Length>>).
 
@@ -170,6 +173,22 @@ encode_prefixed_array([H|T], Types, Acc) ->
     Result = encode_message_list(H, Types, <<>>),
     encode_prefixed_array(T, Types, <<Acc/binary, Result/binary>>).
 
+encode_prefixed_optional(Data, Type) ->
+    case Type of
+        binary ->
+            case byte_size(Data) of 
+                0 ->
+                    <<0:8>>;
+                _ ->
+                    <<1:8, Data/binary>>
+            end;
+        [] ->
+            <<0:8>>;
+        _ ->
+            <<Result/binary>> = get_encode_value(Data, Type),
+            <<1:8, Result/binary>>
+    end.
+
 encode_prefixed_array_login({_Name, _Value}) ->
 %    io:format("why of why~p~n", [{Name, Value}]),
 %    Length_of_name = varint:encode_varint(byte_size(Name)),
@@ -179,6 +198,7 @@ encode_prefixed_array_login({_Name, _Value}) ->
 %    <<Length/binary, Data/binary>>.
     <<0:8>>.
 %% boss bar is a list containing action and data, data being another list
+%% 
 encode_boss_bar([Action, Data]) ->
     Result = 
         case Action of
