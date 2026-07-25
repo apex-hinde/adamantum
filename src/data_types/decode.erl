@@ -31,14 +31,14 @@ decode_type(Data, Type) ->
             decode_string(Data);
         varint ->
             decode_varint(Data);
-%%        varlong ->
-%%            decode_varlong(Data);
+        varlong ->
+            decode_varlong(Data);
 %%        entity_metadata ->
 %%            decode_entity_metadata(Data);
-%%        slot ->
-%%            decode_slot(Data);
-%%        hashed_slot ->
-%%            decode_hashed_slot(Data);
+        slot ->
+            decode_slot(Data);
+        hashed_slot ->
+            decode_hashed_slot(Data);
         nbt ->
             nbt:decode(Data);
          position ->
@@ -50,19 +50,27 @@ decode_type(Data, Type) ->
         bitset ->
             decode_bitset(Data);
         fixed_bitset ->
-            decode_fixed_bitset(Data)
-%%        optional ->
-%%            decode_optional(Data);
-%%        prefixed_optional ->
-%%            decode_prefixed_optional(Data);
-%%        array ->
-%%            decode_array(Data);
-%%        prefixed_array ->
-%%            decode_prefixed_array(Data);
-%%        enum ->
-%%            decode_enum(Data);
-%%        byte_array ->
-%%            decode_byte_array(Data);
+            decode_fixed_bitset(Data);
+        {optional, Inner_Type, Bool} ->
+            decode_optional(Data, Inner_Type, Bool);
+        {optional, Inner_Type} ->
+            decode_prefixed_optional(Data, Inner_Type);
+        {array, Arg1, Arg2} ->
+            decode_array(Data, Arg1, Arg2);
+        {prefixed_array, ElemType} ->
+            decode_prefixed_array(Data, ElemType);
+        {prefixed_array, PrefixType, ElemType} ->
+            decode_prefixed_array(Data, PrefixType, ElemType);
+        enum ->
+            decode_enum(Data);
+        {enum, Arg1} ->
+            decode_enum(Data, Arg1);
+        {enum, Arg1, Arg2} ->
+            decode_enum(Data, Arg1, Arg2);
+        byte_array ->
+            decode_byte_array(Data);
+        {byte_array, Arg1} ->
+            decode_byte_array(Data, Arg1)
 %%        id_or_x ->
 %%            decode_id_or_x(Data);
 %%        id_set ->
@@ -130,11 +138,35 @@ decode_string(Data) ->
 decode_varint(Data) when is_binary(Data) ->
     decode_varint(Data, 0, 0).
 
+decode_varint(_Data, Position, _Acc) when Position >= 35 ->
+    {error, "varint too big"};
 decode_varint(<<1:1, Number:7, Rest/binary>>, Position, Acc) ->
     decode_varint(Rest, Position + 7, (Number bsl Position) + Acc);
 decode_varint(<<0:1, Number:7, Rest/binary>>, Position, Acc) ->
-    {(Number bsl Position) + Acc, Rest};
+    RawVal = (Number bsl Position) + Acc,
+    Val = case RawVal band 16#FFFFFFFF of
+        V when V >= 16#80000000 -> V - 16#100000000;
+        V -> V
+    end,
+    {Val, Rest};
 decode_varint(<<>>, _, _) ->
+    {error, "insufficient data"}.
+
+decode_varlong(Data) when is_binary(Data) ->
+    decode_varlong(Data, 0, 0).
+
+decode_varlong(_Data, Position, _Acc) when Position >= 70 ->
+    {error, "varlong too big"};
+decode_varlong(<<1:1, Number:7, Rest/binary>>, Position, Acc) ->
+    decode_varlong(Rest, Position + 7, (Number bsl Position) + Acc);
+decode_varlong(<<0:1, Number:7, Rest/binary>>, Position, Acc) ->
+    RawVal = (Number bsl Position) + Acc,
+    Val = case RawVal band 16#FFFFFFFFFFFFFFFF of
+        V when V >= 16#8000000000000000 -> V - 16#10000000000000000;
+        V -> V
+    end,
+    {Val, Rest};
+decode_varlong(<<>>, _, _) ->
     {error, "insufficient data"}.
 
 decode_position(Data) ->
@@ -152,3 +184,178 @@ decode_fixed_bitset(Data) ->
     {Length, Data2} = decode_varint(Data),
     <<Bit_set:Length/signed-integer, Data3/binary>> = Data2,
     {Data3, Bit_set}.
+
+decode_byte_array(Data) ->
+    {<<>>, Data}.
+
+decode_byte_array(Data, Length) when is_integer(Length) ->
+    <<ByteArray:Length/binary, Data2/binary>> = Data,
+    {Data2, ByteArray};
+decode_byte_array(Data, PrefixType) when is_atom(PrefixType) ->
+    {RestData, Length} = decode_type_internal(Data, PrefixType),
+    <<ByteArray:Length/binary, Data2/binary>> = RestData,
+    {Data2, ByteArray}.
+
+
+
+decode_optional(Data, Type, true) ->
+    {RestData, Value} = decode_type(Data, Type),
+    {RestData, {some, Value}};
+
+decode_optional(Data, _Type, false) ->
+    {Data, none}.
+
+decode_prefixed_optional(Data, InnerType) ->
+    {RestData, IsPresent} = decode_bool(Data),
+    case IsPresent of
+        true ->
+            {RestData2, Value} = decode_type(RestData, InnerType),
+            {RestData2, {some, Value}};
+        false ->
+            {RestData, none}
+    end.
+
+decode_array(Data, Count, ElemType) when is_integer(Count), Count >= 0 ->
+    decode_array_loop(Data, Count, ElemType, []);
+decode_array(Data, ElemType, Count) when is_integer(Count), Count >= 0 ->
+    decode_array_loop(Data, Count, ElemType, []).
+
+decode_array_loop(Data, 0, _ElemType, Acc) ->
+    {Data, lists:reverse(Acc)};
+decode_array_loop(Data, Count, ElemType, Acc) ->
+    {RestData, Elem} = decode_type(Data, ElemType),
+    decode_array_loop(RestData, Count - 1, ElemType, [Elem | Acc]).
+
+decode_prefixed_array(Data, ElemType) ->
+    {Count, RestData} = decode_varint(Data),
+    decode_array(RestData, Count, ElemType).
+
+decode_prefixed_array(Data, varint, ElemType) ->
+    {Count, RestData} = decode_varint(Data),
+    decode_array(RestData, Count, ElemType);
+decode_prefixed_array(Data, PrefixType, ElemType) ->
+    {RestData, Count} = decode_type(Data, PrefixType),
+    decode_array(RestData, Count, ElemType).
+
+decode_enum(Data) ->
+    decode_enum(Data, varint).
+
+decode_enum(Data, InnerType) when is_atom(InnerType) ->
+    decode_type_internal(Data, InnerType);
+decode_enum(Data, EnumList) when is_list(EnumList); is_map(EnumList) ->
+    decode_enum(Data, varint, EnumList).
+
+decode_enum(Data, InnerType, EnumList) ->
+    case decode_type_internal(Data, InnerType) of
+        {error, Reason} ->
+            {error, Reason};
+        {Rest, Val} when is_list(EnumList) ->
+            if is_integer(Val) andalso Val >= 0 andalso Val < length(EnumList) ->
+                    {Rest, lists:nth(Val + 1, EnumList)};
+               true ->
+                    case lists:member(Val, EnumList) of
+                        true -> {Rest, Val};
+                        false -> {error, "invalid enum value"}
+                    end
+            end;
+        {Rest, Val} when is_map(EnumList) ->
+            case EnumList of
+       #{Val := MappedVal} ->
+           {Rest, MappedVal};
+       #{} ->
+           case lists:member(Val, maps:values(EnumList)) of
+                        true -> {Rest, Val};
+                        false -> {error, "invalid enum value"}
+                    end
+   end
+    end.
+
+decode_type_internal(Data, varint) ->
+    case decode_varint(Data) of
+        {error, Err} -> {error, Err};
+        {Val, Rest} -> {Rest, Val}
+    end;
+decode_type_internal(Data, varlong) ->
+    case decode_varlong(Data) of
+        {error, Err} -> {error, Err};
+        {Val, Rest} -> {Rest, Val}
+    end;
+decode_type_internal(Data, InnerType) ->
+    decode_type(Data, InnerType).
+
+%% Slot
+%%
+%% Wire format (workaround for opaque component data):
+%%   ItemCount        :: VarInt
+%%   [if ItemCount > 0]
+%%     ItemID         :: VarInt
+%%     NAdd           :: VarInt
+%%     NRemove        :: VarInt
+%%     ComponentsToAdd    :: NAdd   × {TypeId::VarInt, DataLen::VarInt, Data::binary}
+%%     ComponentsToRemove :: NRemove × TypeId::VarInt
+%%
+%% NOTE: DataLen + Data is NOT the real Minecraft wire format for component data
+%% (which is type-dependent). It is a local workaround until the component-type
+%% registry and individual component codecs are implemented.
+decode_slot(Data) ->
+    {ItemCount, Rest1} = decode_varint(Data),
+    case ItemCount of
+        0 ->
+            {Rest1, empty};
+        _ ->
+            {ItemID,  Rest2} = decode_varint(Rest1),
+            {NAdd,    Rest3} = decode_varint(Rest2),
+            {NRemove, Rest4} = decode_varint(Rest3),
+            {Rest5, ComponentsToAdd}    = decode_slot_add_components(Rest4, NAdd, []),
+            {Rest6, ComponentsToRemove} = decode_slot_remove_components(Rest5, NRemove, []),
+            {Rest6, {ItemCount, ItemID, ComponentsToAdd, ComponentsToRemove}}
+    end.
+
+decode_slot_add_components(Data, 0, Acc) ->
+    {Data, lists:reverse(Acc)};
+decode_slot_add_components(Data, N, Acc) ->
+    {TypeId,  Rest1} = decode_varint(Data),
+    {DataLen, Rest2} = decode_varint(Rest1),
+    <<DataBin:DataLen/binary, Rest3/binary>> = Rest2,
+    decode_slot_add_components(Rest3, N - 1, [{TypeId, DataBin} | Acc]).
+
+decode_slot_remove_components(Data, 0, Acc) ->
+    {Data, lists:reverse(Acc)};
+decode_slot_remove_components(Data, N, Acc) ->
+    {TypeId, Rest1} = decode_varint(Data),
+    decode_slot_remove_components(Rest1, N - 1, [TypeId | Acc]).
+
+%% Hashed Slot
+%%
+%% Wire format (matches real Minecraft protocol for hashed slots):
+%%   HasItem          :: Boolean
+%%   [if HasItem]
+%%     ItemID         :: VarInt
+%%     ItemCount      :: VarInt
+%%     NAdd           :: VarInt
+%%     ComponentsToAdd    :: NAdd   × {TypeId::VarInt, Hash::Int32}
+%%     NRemove        :: VarInt
+%%     ComponentsToRemove :: NRemove × TypeId::VarInt
+%%
+%% The Hash is a CRC32C checksum of the component data (currently undocumented).
+decode_hashed_slot(Data) ->
+    {Rest1, HasItem} = decode_bool(Data),
+    case HasItem of
+        false ->
+            {Rest1, empty};
+        true ->
+            {ItemID,    Rest2} = decode_varint(Rest1),
+            {ItemCount, Rest3} = decode_varint(Rest2),
+            {NAdd,      Rest4} = decode_varint(Rest3),
+            {Rest5, ComponentsToAdd}    = decode_hashed_slot_add_components(Rest4, NAdd, []),
+            {NRemove,   Rest6}          = decode_varint(Rest5),
+            {Rest7, ComponentsToRemove} = decode_slot_remove_components(Rest6, NRemove, []),
+            {Rest7, {ItemID, ItemCount, ComponentsToAdd, ComponentsToRemove}}
+    end.
+
+decode_hashed_slot_add_components(Data, 0, Acc) ->
+    {Data, lists:reverse(Acc)};
+decode_hashed_slot_add_components(Data, N, Acc) ->
+    {TypeId, Rest1} = decode_varint(Data),
+    <<Hash:32/signed-integer, Rest2/binary>> = Rest1,
+    decode_hashed_slot_add_components(Rest2, N - 1, [{TypeId, Hash} | Acc]).

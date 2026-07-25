@@ -47,7 +47,20 @@ varint_test() ->
     ?assertEqual(<<127>>, encode:encode_type(127, varint)),
     ?assertEqual(<<128, 1>>, encode:encode_type(128, varint)),
     ?assertEqual(<<255, 1>>, encode:encode_type(255, varint)),
-    ?assertEqual(<<255, 255, 255, 255, 15>>, encode:encode_type(-1, varint)).
+    ?assertEqual(<<255, 255, 255, 255, 7>>, encode:encode_type(2147483647, varint)),
+    ?assertEqual(<<255, 255, 255, 255, 15>>, encode:encode_type(-1, varint)),
+    ?assertEqual(<<128, 128, 128, 128, 8>>, encode:encode_type(-2147483648, varint)).
+
+varlong_test() ->
+    ?assertEqual(<<0>>, encode:encode_type(0, varlong)),
+    ?assertEqual(<<1>>, encode:encode_type(1, varlong)),
+    ?assertEqual(<<127>>, encode:encode_type(127, varlong)),
+    ?assertEqual(<<128, 1>>, encode:encode_type(128, varlong)),
+    ?assertEqual(<<255, 1>>, encode:encode_type(255, varlong)),
+    ?assertEqual(<<255, 255, 255, 255, 7>>, encode:encode_type(2147483647, varlong)),
+    ?assertEqual(<<255, 255, 255, 255, 255, 255, 255, 255, 127>>, encode:encode_type(9223372036854775807, varlong)),
+    ?assertEqual(<<255, 255, 255, 255, 255, 255, 255, 255, 255, 1>>, encode:encode_type(-1, varlong)),
+    ?assertEqual(<<128, 128, 128, 128, 128, 128, 128, 128, 128, 1>>, encode:encode_type(-9223372036854775808, varlong)).
 
 identifier_test() ->
     Str = "minecraft:diamond",
@@ -76,3 +89,60 @@ fixed_bitset_test() ->
     ?assertEqual(<<8, 16#FF>>, encode:encode_type(-1, fixed_bitset)),
     ?assertEqual(<<16, 1, 0>>, encode:encode_type(256, fixed_bitset)).
 
+optional_test() ->
+    ?assertEqual(<<5, "hello">>, encode:encode_type({some, "hello"}, {optional, string, true})),
+    ?assertEqual(<<>>, encode:encode_type(none, {optional, string, false})).
+
+prefixed_optional_test() ->
+    ?assertEqual(<<1, 42:32/signed-integer>>, encode:encode_type({some, 42}, {optional, int})),
+    ?assertEqual(<<0>>, encode:encode_type(none, {optional, int})),
+    ?assertEqual(<<0>>, encode:encode_type(undefined, {optional, int})).
+
+
+array_test() ->
+    ?assertEqual(<<1, 0>>, encode:encode_type([true, false], {array, bool})),
+    ?assertEqual(<<100:32/signed-integer>>, encode:encode_type([100, 200], {array, 1, int})).
+
+prefixed_array_test() ->
+    ?assertEqual(<<2, 10, 20>>, encode:encode_type([10, 20], {prefixed_array, byte})),
+    ?assertEqual(<<0>>, encode:encode_type([], {prefixed_array, byte})),
+    ?assertEqual(<<2, 100:32/signed-integer, 200:32/signed-integer>>, encode:encode_type([100, 200], {prefixed_array, int})),
+    ?assertEqual(<<0, 2, 10, 20>>, encode:encode_type([10, 20], {prefixed_array, short, byte})).
+
+enum_test() ->
+    ?assertEqual(<<42>>, encode:encode_type(42, enum)),
+    ?assertEqual(<<42>>, encode:encode_type(42, {enum, varint})),
+    ?assertEqual(<<42>>, encode:encode_type(42, {enum, byte})),
+    ?assertEqual(<<42:32/signed-integer>>, encode:encode_type(42, {enum, int})),
+    ?assertEqual(<<1>>, encode:encode_type(south, {enum, [north, south, east, west]})),
+    ?assertEqual(<<2>>, encode:encode_type(east, {enum, byte, [north, south, east, west]})).
+
+byte_array_test() ->
+    ?assertEqual(<<"hello">>, encode:encode_type(<<"hello">>, byte_array)),
+    ?assertEqual(<<"hello">>, encode:encode_type("hello", byte_array)),
+    ?assertEqual(<<"hello">>, encode:encode_type(<<"helloworld">>, {byte_array, 5})),
+    ?assertEqual(<<5, "hello">>, encode:encode_type(<<"hello">>, {byte_array, varint})),
+    ?assertEqual(<<0, 5, "hello">>, encode:encode_type("hello", {byte_array, short})).
+
+slot_test() ->
+    %% Empty slot: just VarInt(0)
+    ?assertEqual(<<0>>, encode:encode_type(empty, slot)),
+    ?assertEqual(<<0>>, encode:encode_type(0, slot)),
+    %% Non-empty, no components: ItemCount=1, ItemID=5, NAdd=0, NRemove=0
+    ?assertEqual(<<1, 5, 0, 0>>, encode:encode_type({1, 5, [], []}, slot)),
+    %% With one add-component {TypeId=3, Data=<<1,2>>} and one remove TypeId=7:
+    %% ItemCount=2, ItemID=10, NAdd=1, NRemove=1,
+    %% add: TypeId=3, DataLen=2, Data=<<1,2>>, remove: TypeId=7
+    ?assertEqual(<<2, 10, 1, 1, 3, 2, 1, 2, 7>>,
+                 encode:encode_type({2, 10, [{3, <<1, 2>>}], [7]}, slot)).
+
+hashed_slot_test() ->
+    %% Empty hashed slot: Boolean false
+    ?assertEqual(<<0>>, encode:encode_type(empty, hashed_slot)),
+    %% Non-empty, no components: HasItem=true, ItemID=5, ItemCount=1, NAdd=0, NRemove=0
+    ?assertEqual(<<1, 5, 1, 0, 0>>, encode:encode_type({5, 1, [], []}, hashed_slot)),
+    %% With one add {TypeId=3, Hash=12345} and one remove TypeId=7:
+    %% HasItem=true, ItemID=5, ItemCount=1, NAdd=1,
+    %% add: TypeId=3, Hash=12345 as Int32, NRemove=1, remove: TypeId=7
+    ?assertEqual(<<1, 5, 1, 1, 3, 12345:32/signed-integer, 1, 7>>,
+                 encode:encode_type({5, 1, [{3, 12345}], [7]}, hashed_slot)).

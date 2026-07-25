@@ -34,14 +34,14 @@ encode_type(Data, Type) ->
 %%            encode_json_text_component(Data);
         identifier ->
             encode_identifier(Data);
-%%        varlong ->
-%%            encode_varlong(Data);
+        varlong ->
+            encode_varlong(Data);
 %%        entity_metadata ->
 %%            encode_entity_metadata(Data);
-%%        slot ->
-%%            encode_slot(Data);
-%%        hashed_slot ->
-%%            encode_hashed_slot(Data);
+        slot ->
+            encode_slot(Data);
+        hashed_slot ->
+            encode_hashed_slot(Data);
         nbt ->
             nbt:encode(Data);
         position ->
@@ -53,19 +53,32 @@ encode_type(Data, Type) ->
         bitset ->
             encode_bitset(Data);
         fixed_bitset ->
-            encode_fixed_bitset(Data)
-%%        optional ->
-%%            encode_optional(Data);
-%%        prefixed_optional ->
-%%            encode_prefixed_optional(Data);
-%%        array ->
-%%            encode_array(Data);
-%%        prefixed_array ->
-%%            encode_prefixed_array(Data);
-%%        enum ->
-%%            encode_enum(Data);
-%%        byte_array ->
-%%            encode_byte_array(Data);
+            encode_fixed_bitset(Data);
+        {optional, Inner_Type, Bool} ->
+            encode_optional(Data, Inner_Type, Bool);
+        {optional, Inner_Type} ->
+            encode_prefixed_optional(Data, Inner_Type);
+        {prefixed_optional, Inner_Type} ->
+            encode_prefixed_optional(Data, Inner_Type);
+
+        {array, ElemType} ->
+            encode_array(Data, ElemType);
+        {array, Arg1, Arg2} ->
+            encode_array(Data, Arg1, Arg2);
+        {prefixed_array, ElemType} ->
+            encode_prefixed_array(Data, ElemType);
+        {prefixed_array, PrefixType, ElemType} ->
+            encode_prefixed_array(Data, PrefixType, ElemType);
+        enum ->
+            encode_enum(Data);
+        {enum, Arg1} ->
+            encode_enum(Data, Arg1);
+        {enum, Arg1, Arg2} ->
+            encode_enum(Data, Arg1, Arg2);
+        byte_array ->
+            encode_byte_array(Data);
+        {byte_array, Arg1} ->
+            encode_byte_array(Data, Arg1)
 %%        id_or_x ->
 %%            encode_id_or_x(Data);
 %%        id_set ->
@@ -140,6 +153,13 @@ encode_varint(I) when is_integer(I), I >= 0, I =< 127 ->
 encode_varint(I) when is_integer(I), I > 127 ->
     <<1:1, (I band 127):7, (encode_varint(I bsr 7))/binary>>.
 
+encode_varlong(I) when is_integer(I), I < 0 ->
+    encode_varlong(I band 16#FFFFFFFFFFFFFFFF);
+encode_varlong(I) when is_integer(I), I >= 0, I =< 127 ->
+    <<I:8>>;
+encode_varlong(I) when is_integer(I), I > 127 ->
+    <<1:1, (I band 127):7, (encode_varlong(I bsr 7))/binary>>.
+
 encode_identifier(String) ->
     encode_string(String).
 
@@ -157,6 +177,7 @@ encode_uuid(UUID) when is_integer(UUID) ->
 encode_bitset({Length, BitSet}) when is_integer(Length), is_integer(BitSet) ->
     LenBin = encode_varint(Length),
     <<LenBin/binary, BitSet:(Length*8)/signed-integer>>;
+
 encode_bitset(BitSet) when is_integer(BitSet) ->
     Length = calc_bitset_bytes(BitSet),
     LenBin = encode_varint(Length),
@@ -165,10 +186,26 @@ encode_bitset(BitSet) when is_integer(BitSet) ->
 encode_fixed_bitset({Bits, BitSet}) when is_integer(Bits), is_integer(BitSet) ->
     LenBin = encode_varint(Bits),
     <<LenBin/binary, BitSet:Bits/signed-integer>>;
+
 encode_fixed_bitset(BitSet) when is_integer(BitSet) ->
     Bits = calc_fixed_bitset_bits(BitSet),
     LenBin = encode_varint(Bits),
     <<LenBin/binary, BitSet:Bits/signed-integer>>.
+
+encode_byte_array(Data) when is_binary(Data) ->
+    Data;
+encode_byte_array(Data) when is_list(Data) ->
+    list_to_binary(Data).
+
+encode_byte_array(Data, Length) when is_integer(Length) ->
+    Bin = if is_binary(Data) -> Data; true -> list_to_binary(Data) end,
+    <<ByteArray:Length/binary, _/binary>> = Bin,
+    ByteArray;
+encode_byte_array(Data, PrefixType) when is_atom(PrefixType) ->
+    Bin = if is_binary(Data) -> Data; true -> list_to_binary(Data) end,
+    LenBin = encode_type(byte_size(Bin), PrefixType),
+    <<LenBin/binary, Bin/binary>>.
+
 
 calc_bitset_bytes(Val) when Val >= 0 ->
     calc_bitset_bytes(Val, 1);
@@ -204,3 +241,156 @@ calc_fixed_bitset_bits_neg(Val, Bits) ->
        true -> calc_fixed_bitset_bits_neg(Val, Bits + 8)
     end.
 
+encode_optional({some, Value}, Type, true) ->
+    encode_type(Value, Type);
+encode_optional(Value, Type, true) ->
+    encode_type(Value, Type);
+encode_optional(_Value, _Type, false) ->
+    <<>>.
+
+encode_prefixed_optional({some, Value}, InnerType) ->
+    <<(encode_bool(true))/binary, (encode_type(Value, InnerType))/binary>>;
+encode_prefixed_optional(none, _InnerType) ->
+    encode_bool(false);
+encode_prefixed_optional(undefined, _InnerType) ->
+    encode_bool(false);
+encode_prefixed_optional(Value, InnerType) ->
+    <<(encode_bool(true))/binary, (encode_type(Value, InnerType))/binary>>.
+
+encode_array(List, ElemType) when is_list(List) ->
+    encode_array_loop(List, ElemType, <<>>);
+encode_array(List, {Count, ElemType}) when is_list(List), is_integer(Count) ->
+    encode_array_loop(lists:sublist(List, Count), ElemType, <<>>);
+encode_array(List, {ElemType, Count}) when is_list(List), is_integer(Count) ->
+    encode_array_loop(lists:sublist(List, Count), ElemType, <<>>).
+
+encode_array(List, Count, ElemType) when is_list(List), is_integer(Count) ->
+    encode_array_loop(lists:sublist(List, Count), ElemType, <<>>);
+encode_array(List, ElemType, Count) when is_list(List), is_integer(Count) ->
+    encode_array_loop(lists:sublist(List, Count), ElemType, <<>>).
+
+encode_array_loop([], _ElemType, Acc) ->
+    Acc;
+encode_array_loop([Head | Tail], ElemType, Acc) ->
+    ElemBin = encode_type(Head, ElemType),
+    encode_array_loop(Tail, ElemType, <<Acc/binary, ElemBin/binary>>).
+
+encode_prefixed_array({prefixed_array, List}, ElemType) ->
+    encode_prefixed_array(List, ElemType);
+encode_prefixed_array(List, ElemType) when is_list(List) ->
+    LenBin = encode_varint(length(List)),
+    ArrayBin = encode_array_loop(List, ElemType, <<>>),
+    <<LenBin/binary, ArrayBin/binary>>.
+
+encode_prefixed_array({prefixed_array, List}, PrefixType, ElemType) ->
+    encode_prefixed_array(List, PrefixType, ElemType);
+encode_prefixed_array(List, PrefixType, ElemType) when is_list(List) ->
+    LenBin = encode_type(length(List), PrefixType),
+    ArrayBin = encode_array_loop(List, ElemType, <<>>),
+    <<LenBin/binary, ArrayBin/binary>>.
+
+encode_enum(Data) ->
+    encode_enum(Data, varint).
+
+encode_enum(Data, InnerType) when is_atom(InnerType) ->
+    encode_type(Data, InnerType);
+encode_enum(Data, EnumList) when is_list(EnumList); is_map(EnumList) ->
+    encode_enum(Data, varint, EnumList).
+
+encode_enum(Data, InnerType, EnumList) when is_list(EnumList) ->
+    case is_integer(Data) of
+        true ->
+            encode_type(Data, InnerType);
+        false ->
+            case find_index(Data, EnumList, 0) of
+                {ok, Idx} ->
+                    encode_type(Idx, InnerType);
+                error ->
+                    error({invalid_enum, Data})
+            end
+    end;
+encode_enum(Data, InnerType, EnumMap) when is_map(EnumMap) ->
+    case EnumMap of
+       #{Data := Val} ->
+           encode_type(Val, InnerType);
+       #{} ->
+           case is_integer(Data) of
+                true -> encode_type(Data, InnerType);
+                false -> error({invalid_enum, Data})
+            end
+   end.
+
+find_index(_Elem, [], _Idx) ->
+    error;
+find_index(Elem, [Elem | _Rest], Idx) ->
+    {ok, Idx};
+find_index(Elem, [_Head | Rest], Idx) ->
+    find_index(Elem, Rest, Idx + 1).
+
+%% Slot
+%%
+%% Wire format (workaround for opaque component data):
+%%   ItemCount        :: VarInt
+%%   [if ItemCount > 0]
+%%     ItemID         :: VarInt
+%%     NAdd           :: VarInt
+%%     NRemove        :: VarInt
+%%     ComponentsToAdd    :: NAdd   × {TypeId::VarInt, DataLen::VarInt, Data::binary}
+%%     ComponentsToRemove :: NRemove × TypeId::VarInt
+%%
+%% NOTE: DataLen + Data is NOT the real Minecraft wire format for component data
+%% (which is type-dependent). It is a local workaround until the component-type
+%% registry and individual component codecs are implemented.
+encode_slot(empty) ->
+    encode_varint(0);
+encode_slot(0) ->
+    encode_varint(0);
+encode_slot({ItemCount, ItemID, ComponentsToAdd, ComponentsToRemove}) ->
+    ItemCountBin = encode_varint(ItemCount),
+    ItemIDBin    = encode_varint(ItemID),
+    NAddBin      = encode_varint(length(ComponentsToAdd)),
+    NRemoveBin   = encode_varint(length(ComponentsToRemove)),
+    AddBin       = encode_slot_add_components(ComponentsToAdd, <<>>),
+    RemoveBin    = encode_array_loop(ComponentsToRemove, varint, <<>>),
+    <<ItemCountBin/binary, ItemIDBin/binary, NAddBin/binary, NRemoveBin/binary,
+      AddBin/binary, RemoveBin/binary>>.
+
+encode_slot_add_components([], Acc) -> Acc;
+encode_slot_add_components([{TypeId, DataBin} | Rest], Acc) ->
+    TypeIdBin  = encode_varint(TypeId),
+    DataLenBin = encode_varint(byte_size(DataBin)),
+    encode_slot_add_components(Rest,
+        <<Acc/binary, TypeIdBin/binary, DataLenBin/binary, DataBin/binary>>).
+
+%% Hashed Slot
+%%
+%% Wire format (matches real Minecraft protocol for hashed slots):
+%%   HasItem          :: Boolean
+%%   [if HasItem]
+%%     ItemID         :: VarInt
+%%     ItemCount      :: VarInt
+%%     NAdd           :: VarInt
+%%     ComponentsToAdd    :: NAdd   × {TypeId::VarInt, Hash::Int32}
+%%     NRemove        :: VarInt
+%%     ComponentsToRemove :: NRemove × TypeId::VarInt
+%%
+%% The Hash is a CRC32C checksum of the component data (currently undocumented).
+encode_hashed_slot(empty) ->
+    encode_bool(false);
+encode_hashed_slot({ItemID, ItemCount, ComponentsToAdd, ComponentsToRemove}) ->
+    HasItemBin    = encode_bool(true),
+    ItemIDBin     = encode_varint(ItemID),
+    ItemCountBin  = encode_varint(ItemCount),
+    NAddBin       = encode_varint(length(ComponentsToAdd)),
+    AddBin        = encode_hashed_slot_add_components(ComponentsToAdd, <<>>),
+    NRemoveBin    = encode_varint(length(ComponentsToRemove)),
+    RemoveBin     = encode_array_loop(ComponentsToRemove, varint, <<>>),
+    <<HasItemBin/binary, ItemIDBin/binary, ItemCountBin/binary,
+      NAddBin/binary, AddBin/binary, NRemoveBin/binary, RemoveBin/binary>>.
+
+encode_hashed_slot_add_components([], Acc) -> Acc;
+encode_hashed_slot_add_components([{TypeId, Hash} | Rest], Acc) ->
+    TypeIdBin = encode_varint(TypeId),
+    HashBin   = <<Hash:32/signed-integer>>,
+    encode_hashed_slot_add_components(Rest,
+        <<Acc/binary, TypeIdBin/binary, HashBin/binary>>).
