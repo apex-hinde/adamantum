@@ -6,7 +6,10 @@
     {applications, [
         kernel,
         stdlib,
-        inets
+        inets,
+        ssl,
+        mnesia,
+        nbtea
     ]},
     {env, []},
     {modules, []},

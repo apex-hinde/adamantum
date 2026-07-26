@@ -1,5 +1,7 @@
 -module(encode_tests).
 -include_lib("eunit/include/eunit.hrl").
+-include("src/data_types/records.hrl").
+
 
 bool_test() ->
     ?assertEqual(<<1>>, encode:encode_type(true, bool)),
@@ -98,6 +100,23 @@ prefixed_optional_test() ->
     ?assertEqual(<<0>>, encode:encode_type(none, {optional, int})),
     ?assertEqual(<<0>>, encode:encode_type(undefined, {optional, int})).
 
+id_or_x_test() ->
+    ?assertEqual(<<1>>, encode:encode_type({id, 0}, id_or_x)),
+    ?assertEqual(<<6>>, encode:encode_type({id, 5}, {id_or_x, string})),
+    ?assertEqual(<<128, 1>>, encode:encode_type({id, 127}, {id_or_x, int})),
+    ?assertEqual(<<0, 5, "hello">>, encode:encode_type({val, "hello"}, {id_or_x, string})),
+    ?assertEqual(<<0, 5, "hello">>, encode:encode_type({value, "hello"}, {id_or_x, string})),
+    ?assertEqual(<<0, 5, "hello">>, encode:encode_type({inline, "hello"}, {id_or_x, string})),
+    ?assertEqual(<<0, 5, "hello">>, encode:encode_type("hello", {id_or_x, string})),
+    ?assertEqual(<<0, 42:32/signed-integer>>, encode:encode_type(42, {id_or_x, int})).
+
+id_set_test() ->
+    ?assertEqual(<<0, 14, "minecraft:wool">>, encode:encode_type(<<"minecraft:wool">>, id_set)),
+    ?assertEqual(<<0, 14, "minecraft:wool">>, encode:encode_type({tag, <<"minecraft:wool">>}, id_set)),
+    ?assertEqual(<<4, 1, 2, 3>>, encode:encode_type([1, 2, 3], id_set)),
+    ?assertEqual(<<4, 1, 2, 3>>, encode:encode_type({ids, [1, 2, 3]}, id_set)),
+    ?assertEqual(<<1>>, encode:encode_type([], id_set)).
+
 
 array_test() ->
     ?assertEqual(<<1, 0>>, encode:encode_type([true, false], {array, bool})),
@@ -146,3 +165,152 @@ hashed_slot_test() ->
     %% add: TypeId=3, Hash=12345 as Int32, NRemove=1, remove: TypeId=7
     ?assertEqual(<<1, 5, 1, 1, 3, 12345:32/signed-integer, 1, 7>>,
                  encode:encode_type({5, 1, [{3, 12345}], [7]}, hashed_slot)).
+
+text_component_test() ->
+    Comp = #{type => <<"text">>, text => <<"Hello">>},
+    EncBin = encode:encode_type(Comp, text_component),
+    ?assert(is_binary(EncBin)),
+    {Rest, DecodedComp} = decode:decode_type(EncBin, text_component),
+    ?assertEqual(<<>>, Rest),
+    ?assertEqual(<<"text">>, maps:get(type, DecodedComp)),
+    ?assertEqual(<<"Hello">>, maps:get(text, DecodedComp)).
+
+teleport_flags_test() ->
+    %% Int input
+    ?assertEqual(<<0:32/signed-integer>>, encode:encode_type(0, teleport_flags)),
+    ?assertEqual(<<511:32/signed-integer>>, encode:encode_type(16#01FF, teleport_flags)),
+
+    %% Map input
+    MapVal = #{
+        relative_x => true,
+        relative_z => true,
+        rotate_velocity => true
+    },
+    ExpectedInt = 16#0001 bor 16#0004 bor 16#0100,
+    ?assertEqual(<<ExpectedInt:32/signed-integer>>, encode:encode_type(MapVal, teleport_flags)),
+
+    %% List input
+    ListVal = [relative_x, relative_z, rotate_velocity],
+    ?assertEqual(<<ExpectedInt:32/signed-integer>>, encode:encode_type(ListVal, teleport_flags)),
+
+    %% Empty map / list
+    ?assertEqual(<<0:32/signed-integer>>, encode:encode_type(#{}, teleport_flags)),
+    ?assertEqual(<<0:32/signed-integer>>, encode:encode_type([], teleport_flags)).
+
+slot_display_test() ->
+    ?assertEqual(<<0>>, encode:encode_type(#empty{type = 'minecraft:empty'}, slot_display)),
+    ?assertEqual(<<1>>, encode:encode_type(#any_fuel{type = 'minecraft:any_fuel'}, slot_display)),
+    ?assertEqual(<<4, 42>>, encode:encode_type(#item{type = 'minecraft:item', item_type = 42}, slot_display)),
+    ?assertEqual(<<6, 15, "minecraft:stone">>, encode:encode_type(#tag{type = 'minecraft:tag', tag = "minecraft:stone"}, slot_display)).
+
+recipe_display_test() ->
+    EmptySlot = #empty{type = 'minecraft:empty'},
+    ItemSlot = #item{type = 'minecraft:item', item_type = 10},
+
+    Shapeless = #crafting_shapeless{
+        type = 'minecraft:crafting_shapeless',
+        ingredients_count = 1,
+        ingredients = [ItemSlot],
+        result = EmptySlot,
+        crafting_station = EmptySlot
+    },
+    ?assertEqual(<<0, 1, 4, 10, 0, 0>>, encode:encode_type(Shapeless, recipe_display)),
+
+    Shaped = #crafting_shaped{
+        type = 'minecraft:crafting_shaped',
+        width = 1,
+        height = 1,
+        ingredients_count = 1,
+        ingredients = [ItemSlot],
+        result = EmptySlot,
+        crafting_station = EmptySlot
+    },
+    ?assertEqual(<<1, 1, 1, 1, 4, 10, 0, 0>>, encode:encode_type(Shaped, recipe_display)),
+
+    Furnace = #furnace{
+        type = 'minecraft:furnace',
+        ingredient = ItemSlot,
+        fuel = EmptySlot,
+        result = EmptySlot,
+        crafting_station = EmptySlot,
+        cooking_time = 200,
+        experience = 0.35
+    },
+    ExpBin = <<0.35:32/float>>,
+    ?assertEqual(<<2, 4, 10, 0, 0, 0, 200, 1, ExpBin/binary>>, encode:encode_type(Furnace, recipe_display)),
+
+    Stonecutter = #stonecutter{
+        type = 'minecraft:stonecutter',
+        ingredient = ItemSlot,
+        result = EmptySlot,
+        crafting_station = EmptySlot
+    },
+    ?assertEqual(<<3, 4, 10, 0, 0>>, encode:encode_type(Stonecutter, recipe_display)),
+
+    Smithing = #smithing{
+        type = 'minecraft:smithing',
+        template = ItemSlot,
+        base = EmptySlot,
+        addition = EmptySlot,
+        result = EmptySlot,
+        crafting_station = EmptySlot
+    },
+    ?assertEqual(<<4, 4, 10, 0, 0, 0, 0>>, encode:encode_type(Smithing, recipe_display)).
+
+either_x_or_y_test() ->
+    %% X variant (encoded with boolean true byte 1)
+    ?assertEqual(<<1, 42>>, encode:encode_type({left, 42}, {either_x_or_y, byte, string})),
+    ?assertEqual(<<1, 42>>, encode:encode_type({x, 42}, {either_x_or_y, byte, string})),
+    ?assertEqual(<<1, 42>>, encode:encode_type({true, 42}, {either_x_or_y, byte, string})),
+    %% Y variant (encoded with boolean false byte 0)
+    ?assertEqual(<<0, 5, "hello">>, encode:encode_type({right, <<"hello">>}, {either_x_or_y, byte, string})),
+    ?assertEqual(<<0, 5, "hello">>, encode:encode_type({y, <<"hello">>}, {either_x_or_y, byte, string})),
+    ?assertEqual(<<0, 5, "hello">>, encode:encode_type({false, <<"hello">>}, {either_x_or_y, byte, string})).
+
+game_profile_test() ->
+    UUIDBin = <<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16>>,
+    UsernameBin = <<7, "Player1">>,
+    CountBin = <<2>>,
+    Prop1Bin = <<8, "textures", 4, "val1", 1, 4, "sig1">>,
+    Prop2Bin = <<4, "cape", 4, "val2", 0>>,
+    ExpectedBin = <<UUIDBin/binary, UsernameBin/binary, CountBin/binary, Prop1Bin/binary, Prop2Bin/binary>>,
+    Profile = {UUIDBin, "Player1", [
+        {"textures", "val1", {some, "sig1"}},
+        {"cape", "val2", none}
+    ]},
+    ?assertEqual(ExpectedBin, encode:encode_type(Profile, game_profile)).
+
+resolvable_profile_partial_test() ->
+    ProfileKindBin = <<0>>,
+    UserBin = <<1, 5, "Steve">>,
+    UuidBin = <<0>>,
+    CountBin = <<1>>,
+    Prop1Bin = <<8, "textures", 8, "tex_data", 0>>,
+    BodyBin = <<14, "textures/skin1">>,
+    ModelBin = <<1>>,
+    ExpectedBin = <<ProfileKindBin/binary, UserBin/binary, UuidBin/binary, CountBin/binary, Prop1Bin/binary, BodyBin/binary, ModelBin/binary>>,
+    
+    Data = {0, {{some, "Steve"}, none, [{"textures", "tex_data", none}]}, {some, "textures/skin1"}, none, none, {some, 1}},
+    TypeSpec = {resolvable_profile, true, false, false, true},
+    ?assertEqual(ExpectedBin, encode:encode_type(Data, TypeSpec)),
+    ?assertEqual(ExpectedBin, encode:encode_type(Data, resolvable_profile)).
+
+resolvable_profile_complete_test() ->
+    ProfileKindBin = <<1>>,
+    UUID = <<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16>>,
+    UserBin = <<4, "Alex">>,
+    CountBin = <<0>>,
+    ExpectedBin = <<ProfileKindBin/binary, UUID/binary, UserBin/binary, CountBin/binary>>,
+    
+    Data = {1, {UUID, "Alex", []}, none, none, none, none},
+    TypeSpec = {resolvable_profile, false, false, false, false},
+    ?assertEqual(ExpectedBin, encode:encode_type(Data, TypeSpec)),
+    ?assertEqual(ExpectedBin, encode:encode_type(Data, resolvable_profile)).
+
+
+
+
+
+
+
+

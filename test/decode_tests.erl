@@ -55,16 +55,17 @@ string_test() ->
     ?assertEqual({<<"rest">>, "Hello Minecraft!"}, decode:decode_type(Input, string)).
 
 varint_test() ->
-    ?assertEqual({0, <<>>}, decode:decode_type(<<0>>, varint)),
-    ?assertEqual({1, <<>>}, decode:decode_type(<<1>>, varint)),
-    ?assertEqual({127, <<>>}, decode:decode_type(<<127>>, varint)),
-    ?assertEqual({128, <<>>}, decode:decode_type(<<128, 1>>, varint)),
-    ?assertEqual({255, <<>>}, decode:decode_type(<<255, 1>>, varint)),
-    ?assertEqual({300, <<"rest">>}, decode:decode_type(<<172, 2, "rest">>, varint)),
-    ?assertEqual({2147483647, <<>>}, decode:decode_type(<<255, 255, 255, 255, 7>>, varint)),
-    ?assertEqual({-1, <<>>}, decode:decode_type(<<255, 255, 255, 255, 15>>, varint)),
-    ?assertEqual({-2147483648, <<>>}, decode:decode_type(<<128, 128, 128, 128, 8>>, varint)),
-    ?assertEqual({1, <<>>}, decode:decode_type(<<129, 0>>, varint)),
+    ?assertEqual({<<>>, 0}, decode:decode_type(<<0>>, varint)),
+    ?assertEqual({<<>>, 1}, decode:decode_type(<<1>>, varint)),
+    ?assertEqual({<<>>, 127}, decode:decode_type(<<127>>, varint)),
+    ?assertEqual({<<>>, 128}, decode:decode_type(<<128, 1>>, varint)),
+    ?assertEqual({<<>>, 255}, decode:decode_type(<<255, 1>>, varint)),
+    ?assertEqual({<<"rest">>, 300}, decode:decode_type(<<172, 2, "rest">>, varint)),
+    ?assertEqual({<<>>, 2147483647}, decode:decode_type(<<255, 255, 255, 255, 7>>, varint)),
+    ?assertEqual({<<>>, -1}, decode:decode_type(<<255, 255, 255, 255, 15>>, varint)),
+    ?assertEqual({<<>>, -2147483648}, decode:decode_type(<<128, 128, 128, 128, 8>>, varint)),
+    ?assertEqual({<<>>, 1}, decode:decode_type(<<129, 0>>, varint)),
+
     ?assertEqual({error, "insufficient data"}, decode:decode_type(<<128>>, varint)),
     ?assertEqual({error, "varint too big"}, decode:decode_type(<<128, 128, 128, 128, 128, 1>>, varint)).
 
@@ -124,6 +125,20 @@ prefixed_optional_test() ->
     ?assertEqual({<<"rest">>, {some, 42}}, decode:decode_type(<<1, 42:32/signed-integer, "rest">>, {optional, int})),
     ?assertEqual({<<"rest">>, none}, decode:decode_type(<<0, "rest">>, {optional, int})).
 
+id_or_x_test() ->
+    ?assertEqual({<<"rest">>, {id, 0}}, decode:decode_type(<<1, "rest">>, id_or_x)),
+    ?assertEqual({<<"rest">>, {id, 5}}, decode:decode_type(<<6, "rest">>, {id_or_x, string})),
+    ?assertEqual({<<"rest">>, {id, 127}}, decode:decode_type(<<128, 1, "rest">>, {id_or_x, int})),
+    ?assertEqual({<<"rest">>, {val, "hello"}}, decode:decode_type(<<0, 5, "hello", "rest">>, {id_or_x, string})),
+    ?assertEqual({<<"rest">>, {val, 42}}, decode:decode_type(<<0, 42:32/signed-integer, "rest">>, {id_or_x, int})),
+    ?assertEqual({error, "insufficient data"}, decode:decode_type(<<0>>, {id_or_x, varint})).
+
+id_set_test() ->
+    ?assertEqual({<<"rest">>, "minecraft:wool"}, decode:decode_type(<<0, 14, "minecraft:wool", "rest">>, id_set)),
+    ?assertEqual({<<"rest">>, [1, 2, 3]}, decode:decode_type(<<4, 1, 2, 3, "rest">>, id_set)),
+    ?assertEqual({<<"rest">>, []}, decode:decode_type(<<1, "rest">>, id_set)),
+    ?assertEqual({error, "insufficient data"}, decode:decode_type(<<>>, id_set)).
+
 
 array_test() ->
     ?assertEqual({<<"rest">>, [true, false]}, decode:decode_type(<<1, 0, "rest">>, {array, 2, bool})),
@@ -173,3 +188,116 @@ hashed_slot_test() ->
     Input = <<1, 5, 1, 1, 3, 12345:32/signed-integer, 1, 7>>,
     ?assertEqual({<<>>, {5, 1, [{3, 12345}], [7]}},
                  decode:decode_type(Input, hashed_slot)).
+
+text_component_test() ->
+    SNBTBin = <<"{text: \"Hello\", color: \"red\"}">>,
+    LenBin = encode:encode_type(byte_size(SNBTBin), varint),
+    {Rest, Comp} = decode:decode_type(<<LenBin/binary, SNBTBin/binary, "rest">>, text_component),
+    ?assertEqual(<<"rest">>, Rest),
+    ?assertEqual(<<"text">>, maps:get(type, Comp)),
+    ?assertEqual(<<"Hello">>, maps:get(text, Comp)),
+    ?assertEqual(<<"red">>, maps:get(color, Comp)).
+
+json_text_component_test() ->
+    JsonBin = <<"{\"text\":\"Hello\",\"color\":\"red\"}">>,
+    LenBin = encode:encode_type(byte_size(JsonBin), varint),
+    {Rest, Comp} = decode:decode_type(<<LenBin/binary, JsonBin/binary, "rest">>, json_text_component),
+    ?assertEqual(<<"rest">>, Rest),
+    ?assertEqual(<<"Hello">>, maps:get(<<"text">>, Comp)),
+    ?assertEqual(<<"red">>, maps:get(<<"color">>, Comp)).
+
+teleport_flags_test() ->
+    %% All flags false (0)
+    {Rest1, Flags1} = decode:decode_type(<<0:32/signed-integer, "rest">>, teleport_flags),
+    ?assertEqual(<<"rest">>, Rest1),
+    ?assertEqual(false, maps:get(relative_x, Flags1)),
+    ?assertEqual(false, maps:get(relative_y, Flags1)),
+    ?assertEqual(false, maps:get(relative_z, Flags1)),
+    ?assertEqual(false, maps:get(relative_yaw, Flags1)),
+    ?assertEqual(false, maps:get(relative_pitch, Flags1)),
+    ?assertEqual(false, maps:get(relative_velocity_x, Flags1)),
+    ?assertEqual(false, maps:get(relative_velocity_y, Flags1)),
+    ?assertEqual(false, maps:get(relative_velocity_z, Flags1)),
+    ?assertEqual(false, maps:get(rotate_velocity, Flags1)),
+
+    %% Flags relative_x (0x0001), relative_z (0x0004), rotate_velocity (0x0100) -> 0x0105
+    IntVal = 16#0001 bor 16#0004 bor 16#0100,
+    {Rest2, Flags2} = decode:decode_type(<<IntVal:32/signed-integer, "rest">>, teleport_flags),
+    ?assertEqual(<<"rest">>, Rest2),
+    ?assertEqual(true, maps:get(relative_x, Flags2)),
+    ?assertEqual(false, maps:get(relative_y, Flags2)),
+    ?assertEqual(true, maps:get(relative_z, Flags2)),
+    ?assertEqual(false, maps:get(relative_yaw, Flags2)),
+    ?assertEqual(false, maps:get(relative_pitch, Flags2)),
+    ?assertEqual(false, maps:get(relative_velocity_x, Flags2)),
+    ?assertEqual(false, maps:get(relative_velocity_y, Flags2)),
+    ?assertEqual(false, maps:get(relative_velocity_z, Flags2)),
+    ?assertEqual(true, maps:get(rotate_velocity, Flags2)),
+
+    %% All bits 0x01FF set -> all true
+    AllFlags = 16#01FF,
+    {Rest3, Flags3} = decode:decode_type(<<AllFlags:32/signed-integer, "rest">>, teleport_flags),
+    ?assertEqual(<<"rest">>, Rest3),
+    ?assertEqual(true, maps:get(relative_x, Flags3)),
+    ?assertEqual(true, maps:get(relative_y, Flags3)),
+    ?assertEqual(true, maps:get(relative_z, Flags3)),
+    ?assertEqual(true, maps:get(relative_yaw, Flags3)),
+    ?assertEqual(true, maps:get(relative_pitch, Flags3)),
+    ?assertEqual(true, maps:get(relative_velocity_x, Flags3)),
+    ?assertEqual(true, maps:get(relative_velocity_y, Flags3)),
+    ?assertEqual(true, maps:get(relative_velocity_z, Flags3)),
+    ?assertEqual(true, maps:get(rotate_velocity, Flags3)).
+
+either_x_or_y_test() ->
+    %% Boolean true (1) -> decodes X (byte)
+    ?assertEqual({<<"rest">>, 42}, decode:decode_type(<<1, 42, "rest">>, {either_x_or_y, byte, string})),
+    %% Boolean false (0) -> decodes Y (string)
+    ?assertEqual({<<"rest">>, "hello"}, decode:decode_type(<<0, 5, "hello", "rest">>, {either_x_or_y, byte, string})).
+
+game_profile_test() ->
+    UUIDBin = <<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16>>,
+    UsernameBin = <<7, "Player1">>,
+    %% 2 properties:
+    %% Prop 1: Name "textures" (8 bytes), Value "val1" (4 bytes), Sig present (1) "sig1" (4 bytes)
+    %% Prop 2: Name "cape" (4 bytes), Value "val2" (4 bytes), Sig absent (0)
+    CountBin = <<2>>,
+    Prop1Bin = <<8, "textures", 4, "val1", 1, 4, "sig1">>,
+    Prop2Bin = <<4, "cape", 4, "val2", 0>>,
+    Input = <<UUIDBin/binary, UsernameBin/binary, CountBin/binary, Prop1Bin/binary, Prop2Bin/binary, "rest">>,
+    Expected = {UUIDBin, "Player1", [
+        {"textures", "val1", {some, "sig1"}},
+        {"cape", "val2", none}
+    ]},
+    ?assertEqual({<<"rest">>, Expected}, decode:decode_type(Input, game_profile)).
+
+resolvable_profile_partial_test() ->
+    %% ProfileKind = 0 (Partial)
+    ProfileKindBin = <<0>>,
+    UserBin = <<1, 5, "Steve">>,
+    UuidBin = <<0>>,
+    CountBin = <<1>>,
+    Prop1Bin = <<8, "textures", 8, "tex_data", 0>>,
+    BodyBin = <<14, "textures/skin1">>,
+    ModelBin = <<1>>,
+    Input = <<ProfileKindBin/binary, UserBin/binary, UuidBin/binary, CountBin/binary, Prop1Bin/binary, BodyBin/binary, ModelBin/binary, "rest">>,
+    TypeSpec = {resolvable_profile, true, false, false, true},
+    ExpectedProfile = {{some, "Steve"}, none, [{"textures", "tex_data", none}]},
+    Expected = {0, ExpectedProfile, {some, "textures/skin1"}, none, none, {some, 1}},
+    ?assertEqual({<<"rest">>, Expected}, decode:decode_type(Input, TypeSpec)).
+
+resolvable_profile_complete_test() ->
+    %% ProfileKind = 1 (Complete)
+    ProfileKindBin = <<1>>,
+    UUID = <<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16>>,
+    UserBin = <<4, "Alex">>,
+    CountBin = <<0>>,
+    Input = <<ProfileKindBin/binary, UUID/binary, UserBin/binary, CountBin/binary, "rest">>,
+    TypeSpec = {resolvable_profile, false, false, false, false},
+    ExpectedProfile = {UUID, "Alex", []},
+    Expected = {1, ExpectedProfile, none, none, none, none},
+    ?assertEqual({<<"rest">>, Expected}, decode:decode_type(Input, TypeSpec)).
+
+
+
+
+

@@ -1,8 +1,10 @@
 -module(encode).
+-include("src/data_types/records.hrl").
 
 -export([
-    encode_type/2
-]).
+	 encode_type/2
+	]).
+
 
 encode_type(Data, Type) ->
     case Type of
@@ -28,16 +30,16 @@ encode_type(Data, Type) ->
             encode_double(Data);
         string ->
             encode_string(Data);
-%%        text_component ->
-%%            encode_text_component(Data);
-%%        json_text_component ->
-%%            encode_json_text_component(Data);
+        text_component ->
+            encode_text_component(Data);
+        json_text_component ->
+            encode_json_text_component(Data);
         identifier ->
             encode_identifier(Data);
         varlong ->
             encode_varlong(Data);
-%%        entity_metadata ->
-%%            encode_entity_metadata(Data);
+	%%        entity_metadata ->
+	%%            encode_entity_metadata(Data);
         slot ->
             encode_slot(Data);
         hashed_slot ->
@@ -78,35 +80,46 @@ encode_type(Data, Type) ->
         byte_array ->
             encode_byte_array(Data);
         {byte_array, Arg1} ->
-            encode_byte_array(Data, Arg1)
-%%        id_or_x ->
-%%            encode_id_or_x(Data);
-%%        id_set ->
-%%            encode_id_set(Data);
-%%        sound_event ->
-%%            encode_sound_event(Data);
-%%        chat_type ->
-%%            encode_chat_type(Data);
-%%        teleport_flags ->
-%%            encode_teleport_flags(Data);
-%%        recipe_display ->
-%%            encode_recipe_display(Data);
-%%        slot_display ->
-%%            encode_slot_display(Data);
-%%        light_data ->
-%%            encode_light_data(Data);
-%%        either_x_or_y ->
-%%            encode_either_x_or_y(Data);
-%%        game_profile ->
-%%            encode_game_profile(Data);
-%%        resolvable_profile ->
-%%            encode_resolvable_profile(Data);
-%%        debug_subscription_event ->
-%%            encode_debug_subscription_event(Data);
-%%        debug_subscription_update ->
-%%            encode_debug_subscription_update(Data);
-%%        lp_vec3 ->
-%%            encode_lp_vec3(Data)
+            encode_byte_array(Data, Arg1);
+        id_or_x ->
+            encode_id_or_x(Data);
+        {id_or_x, InnerType} ->
+            encode_id_or_x(Data, InnerType);
+        id_set ->
+            encode_id_set(Data);
+        {id_set, _Arg} ->
+            encode_id_set(Data);
+        sound_event ->
+            encode_sound_event(Data);
+        teleport_flags ->
+            encode_teleport_flags(Data);
+        recipe_display ->
+            encode_recipe_display(Data);
+        slot_display ->
+            encode_slot_display(Data);
+        {either_x_or_y, TypeX, TypeY} ->
+            encode_either_x_or_y(Data, TypeX, TypeY);
+
+	    %%        light_data ->
+	    %%            encode_light_data(Data);
+        game_profile ->
+            encode_game_profile(Data);
+        resolvable_profile ->
+            encode_resolvable_profile(Data);
+        {resolvable_profile, BodyOption, CapeOption, ElytraOption, ModelOption} ->
+            encode_resolvable_profile(Data, BodyOption, CapeOption, ElytraOption, ModelOption);
+        debug_subscription_event ->
+            encode_debug_subscription_event(Data);
+        debug_subscription_update ->
+            encode_debug_subscription_update(Data);
+        {debug_subscription_data, Type2} ->
+            encode_debug_subscription_data(Data, Type2);
+        debug_path_node ->
+            encode_debug_path_node(Data);
+        debug_structure_info ->
+            encode_debug_structure_info(Data);
+        debug_structure_piece ->
+            encode_debug_structure_piece(Data)
     end.
 
 encode_bool(true) -> <<1:8>>;
@@ -257,6 +270,28 @@ encode_prefixed_optional(undefined, _InnerType) ->
 encode_prefixed_optional(Value, InnerType) ->
     <<(encode_bool(true))/binary, (encode_type(Value, InnerType))/binary>>.
 
+encode_id_or_x(Data) ->
+    encode_id_or_x(Data, varint).
+
+encode_id_or_x({id, Id}, _InnerType) when is_integer(Id), Id >= 0 ->
+    encode_varint(Id + 1);
+encode_id_or_x({val, Value}, InnerType) ->
+    IDBin = encode_varint(0),
+    ValBin = encode_type(Value, InnerType),
+    <<IDBin/binary, ValBin/binary>>;
+encode_id_or_x({value, Value}, InnerType) ->
+    IDBin = encode_varint(0),
+    ValBin = encode_type(Value, InnerType),
+    <<IDBin/binary, ValBin/binary>>;
+encode_id_or_x({inline, Value}, InnerType) ->
+    IDBin = encode_varint(0),
+    ValBin = encode_type(Value, InnerType),
+    <<IDBin/binary, ValBin/binary>>;
+encode_id_or_x(Value, InnerType) ->
+    IDBin = encode_varint(0),
+    ValBin = encode_type(Value, InnerType),
+    <<IDBin/binary, ValBin/binary>>.
+
 encode_array(List, ElemType) when is_list(List) ->
     encode_array_loop(List, ElemType, <<>>);
 encode_array(List, {Count, ElemType}) when is_list(List), is_integer(Count) ->
@@ -311,14 +346,14 @@ encode_enum(Data, InnerType, EnumList) when is_list(EnumList) ->
     end;
 encode_enum(Data, InnerType, EnumMap) when is_map(EnumMap) ->
     case EnumMap of
-       #{Data := Val} ->
-           encode_type(Val, InnerType);
-       #{} ->
-           case is_integer(Data) of
+	#{Data := Val} ->
+	    encode_type(Val, InnerType);
+	#{} ->
+	    case is_integer(Data) of
                 true -> encode_type(Data, InnerType);
                 false -> error({invalid_enum, Data})
             end
-   end.
+    end.
 
 find_index(_Elem, [], _Idx) ->
     error;
@@ -346,6 +381,7 @@ encode_slot(empty) ->
 encode_slot(0) ->
     encode_varint(0);
 encode_slot({ItemCount, ItemID, ComponentsToAdd, ComponentsToRemove}) ->
+
     ItemCountBin = encode_varint(ItemCount),
     ItemIDBin    = encode_varint(ItemID),
     NAddBin      = encode_varint(length(ComponentsToAdd)),
@@ -360,7 +396,7 @@ encode_slot_add_components([{TypeId, DataBin} | Rest], Acc) ->
     TypeIdBin  = encode_varint(TypeId),
     DataLenBin = encode_varint(byte_size(DataBin)),
     encode_slot_add_components(Rest,
-        <<Acc/binary, TypeIdBin/binary, DataLenBin/binary, DataBin/binary>>).
+			       <<Acc/binary, TypeIdBin/binary, DataLenBin/binary, DataBin/binary>>).
 
 %% Hashed Slot
 %%
@@ -393,4 +429,520 @@ encode_hashed_slot_add_components([{TypeId, Hash} | Rest], Acc) ->
     TypeIdBin = encode_varint(TypeId),
     HashBin   = <<Hash:32/signed-integer>>,
     encode_hashed_slot_add_components(Rest,
-        <<Acc/binary, TypeIdBin/binary, HashBin/binary>>).
+				      <<Acc/binary, TypeIdBin/binary, HashBin/binary>>).
+
+encode_text_component(Data) ->
+    SNBTBin = text_component:to_snbt(Data),
+    encode_string(SNBTBin).
+
+encode_json_text_component(Data) when is_map(Data) ->
+    JsonBin = iolist_to_binary(json:encode(Data)),
+    encode_string(JsonBin);
+encode_json_text_component(Data) when is_binary(Data) ->
+    encode_string(Data);
+encode_json_text_component(Data) when is_list(Data) ->
+    case io_lib:printable_unicode_list(Data) of
+        true ->
+            encode_string(Data);
+        false ->
+            JsonBin = iolist_to_binary(json:encode(Data)),
+            encode_string(JsonBin)
+    end;
+encode_json_text_component(Data) ->
+    JsonBin = iolist_to_binary(json:encode(Data)),
+    encode_string(JsonBin).
+
+encode_id_set(Data) ->
+    case Data of
+        {tag, TagName} ->
+            TypeBin = encode_varint(0),
+            TagBin  = encode_string(TagName),
+            <<TypeBin/binary, TagBin/binary>>;
+        {ids, IDs} when is_list(IDs) ->
+            TypeBin = encode_varint(length(IDs) + 1),
+            IDsBin  = encode_array(IDs, varint),
+            <<TypeBin/binary, IDsBin/binary>>;
+        TagName when is_binary(TagName) ->
+            TypeBin = encode_varint(0),
+            TagBin  = encode_string(TagName),
+            <<TypeBin/binary, TagBin/binary>>;
+        IDs when is_list(IDs) ->
+            case is_tag_name(IDs) of
+                true ->
+                    TypeBin = encode_varint(0),
+                    TagBin  = encode_string(IDs),
+                    <<TypeBin/binary, TagBin/binary>>;
+                false ->
+                    TypeBin = encode_varint(length(IDs) + 1),
+                    IDsBin  = encode_array(IDs, varint),
+                    <<TypeBin/binary, IDsBin/binary>>
+            end
+    end.
+
+is_tag_name(List) ->
+    lists:any(fun(C) -> (C >= $a andalso C =< $z) orelse C == $: orelse C == $/ end, List).
+
+encode_sound_event({SoundName, true, FixedRange}) ->
+    SoundBin = encode_string(SoundName),
+    BoolBin = encode_bool(true),
+    FloatBin = encode_float(FixedRange),
+    <<SoundBin/binary, BoolBin/binary, FloatBin/binary>>;
+encode_sound_event({SoundName, false, _FixedRange}) ->
+    SoundBin = encode_string(SoundName),
+    BoolBin = encode_bool(false),
+    <<SoundBin/binary, BoolBin/binary>>;
+encode_sound_event({SoundName, false}) ->
+    SoundBin = encode_string(SoundName),
+    BoolBin = encode_bool(false),
+    <<SoundBin/binary, BoolBin/binary>>.
+
+encode_teleport_flags(Int) when is_integer(Int) ->
+    encode_int(Int);
+encode_teleport_flags(Map) when is_map(Map) ->
+    BitX = case maps:get(relative_x, Map, false) of true -> 16#0001; false -> 0 end,
+    BitY = case maps:get(relative_y, Map, false) of true -> 16#0002; false -> 0 end,
+    BitZ = case maps:get(relative_z, Map, false) of true -> 16#0004; false -> 0 end,
+    BitYaw = case maps:get(relative_yaw, Map, false) of true -> 16#0008; false -> 0 end,
+    BitPitch = case maps:get(relative_pitch, Map, false) of true -> 16#0010; false -> 0 end,
+    BitVelX = case maps:get(relative_velocity_x, Map, false) of true -> 16#0020; false -> 0 end,
+    BitVelY = case maps:get(relative_velocity_y, Map, false) of true -> 16#0040; false -> 0 end,
+    BitVelZ = case maps:get(relative_velocity_z, Map, false) of true -> 16#0080; false -> 0 end,
+    BitRot = case maps:get(rotate_velocity, Map, false) of true -> 16#0100; false -> 0 end,
+    Int = BitX bor BitY bor BitZ bor BitYaw bor BitPitch bor BitVelX bor BitVelY bor BitVelZ bor BitRot,
+    encode_int(Int);
+
+encode_teleport_flags(FlagsList) when is_list(FlagsList) ->
+    Int = lists:foldl(fun(Flag, Acc) ->
+        Mask = case Flag of
+            relative_x -> 16#0001;
+            relative_y -> 16#0002;
+            relative_z -> 16#0004;
+            relative_yaw -> 16#0008;
+            relative_pitch -> 16#0010;
+            relative_velocity_x -> 16#0020;
+            relative_velocity_y -> 16#0040;
+            relative_velocity_z -> 16#0080;
+            rotate_velocity -> 16#0100;
+            _ -> 0
+        end,
+        Acc bor Mask
+    end, 0, FlagsList),
+    encode_int(Int).
+
+encode_slot_display(#empty{}) ->
+    encode_varint(0);
+encode_slot_display(#any_fuel{}) ->
+    encode_varint(1);
+encode_slot_display(#with_any_potion{base = Base}) ->
+    TypeBin = encode_varint(2),
+    BaseBin = encode_slot_display(Base),
+    <<TypeBin/binary, BaseBin/binary>>;
+encode_slot_display(#only_with_component{base = Base, component_type_id = ComponentTypeID}) ->
+    TypeBin = encode_varint(3),
+    BaseBin = encode_slot_display(Base),
+    CompBin = encode_varint(ComponentTypeID),
+    <<TypeBin/binary, BaseBin/binary, CompBin/binary>>;
+encode_slot_display(#item{item_type = ItemType}) ->
+    TypeBin = encode_varint(4),
+    ItemBin = encode_varint(ItemType),
+    <<TypeBin/binary, ItemBin/binary>>;
+encode_slot_display(#item_stack{item_stack = ItemStack}) ->
+    TypeBin = encode_varint(5),
+    StackBin = encode_slot(ItemStack),
+    <<TypeBin/binary, StackBin/binary>>;
+encode_slot_display(#tag{tag = Tag}) ->
+    TypeBin = encode_varint(6),
+    TagBin = encode_string(Tag),
+    <<TypeBin/binary, TagBin/binary>>;
+encode_slot_display(#dyed{dye = Dye, target = Target}) ->
+    TypeBin = encode_varint(7),
+    DyeBin = encode_slot_display(Dye),
+    TargetBin = encode_slot_display(Target),
+    <<TypeBin/binary, DyeBin/binary, TargetBin/binary>>;
+encode_slot_display(#smithing_trim{base = Base, material = Material, pattern = Pattern}) ->
+    TypeBin = encode_varint(8),
+    BaseBin = encode_slot_display(Base),
+    MatBin = encode_slot_display(Material),
+    PatBin = encode_varint(Pattern),
+    <<TypeBin/binary, BaseBin/binary, MatBin/binary, PatBin/binary>>;
+encode_slot_display(#with_remainder{ingredient = Ingredient, remainder = Remainder}) ->
+    TypeBin = encode_varint(9),
+    IngBin = encode_slot_display(Ingredient),
+    RemBin = encode_slot_display(Remainder),
+    <<TypeBin/binary, IngBin/binary, RemBin/binary>>;
+encode_slot_display(#composite{options = Options}) ->
+    TypeBin = encode_varint(10),
+    OptionsBin = encode_prefixed_array(Options, slot_display),
+    <<TypeBin/binary, OptionsBin/binary>>.
+
+
+encode_recipe_display(#crafting_shapeless{ingredients_count = Count, ingredients = Ingredients, result = Result, crafting_station = CraftingStation}) ->
+    TypeBin = encode_varint(0),
+    ActualCount = case Count of
+        undefined -> length(Ingredients);
+        _ -> Count
+    end,
+    CountBin = encode_varint(ActualCount),
+    IngsBin = encode_array(Ingredients, slot_display),
+    ResBin = encode_slot_display(Result),
+    StationBin = encode_slot_display(CraftingStation),
+    <<TypeBin/binary, CountBin/binary, IngsBin/binary, ResBin/binary, StationBin/binary>>;
+encode_recipe_display(#crafting_shaped{width = Width, height = Height, ingredients_count = Count, ingredients = Ingredients, result = Result, crafting_station = CraftingStation}) ->
+    TypeBin = encode_varint(1),
+    WidthBin = encode_varint(Width),
+    HeightBin = encode_varint(Height),
+    ActualCount = case Count of
+        undefined -> length(Ingredients);
+        _ -> Count
+    end,
+    CountBin = encode_varint(ActualCount),
+    IngsBin = encode_array(Ingredients, slot_display),
+    ResBin = encode_slot_display(Result),
+    StationBin = encode_slot_display(CraftingStation),
+    <<TypeBin/binary, WidthBin/binary, HeightBin/binary, CountBin/binary, IngsBin/binary, ResBin/binary, StationBin/binary>>;
+encode_recipe_display(#furnace{ingredient = Ingredient, fuel = Fuel, result = Result, crafting_station = CraftingStation, cooking_time = CookingTime, experience = Experience}) ->
+    TypeBin = encode_varint(2),
+    IngBin = encode_slot_display(Ingredient),
+    FuelBin = encode_slot_display(Fuel),
+    ResBin = encode_slot_display(Result),
+    StationBin = encode_slot_display(CraftingStation),
+    CookBin = encode_varint(CookingTime),
+    ExpBin = encode_float(Experience),
+    <<TypeBin/binary, IngBin/binary, FuelBin/binary, ResBin/binary, StationBin/binary, CookBin/binary, ExpBin/binary>>;
+encode_recipe_display(#stonecutter{ingredient = Ingredient, result = Result, crafting_station = CraftingStation}) ->
+    TypeBin = encode_varint(3),
+    IngBin = encode_slot_display(Ingredient),
+    ResBin = encode_slot_display(Result),
+    StationBin = encode_slot_display(CraftingStation),
+    <<TypeBin/binary, IngBin/binary, ResBin/binary, StationBin/binary>>;
+encode_recipe_display(#smithing{template = Template, base = Base, addition = Addition, result = Result, crafting_station = CraftingStation}) ->
+    TypeBin = encode_varint(4),
+    TmplBin = encode_slot_display(Template),
+    BaseBin = encode_slot_display(Base),
+    AddBin = encode_slot_display(Addition),
+    ResBin = encode_slot_display(Result),
+    StationBin = encode_slot_display(CraftingStation),
+    <<TypeBin/binary, TmplBin/binary, BaseBin/binary, AddBin/binary, ResBin/binary, StationBin/binary>>.
+
+encode_either_x_or_y({left, Value}, TypeX, _TypeY) ->
+    <<(encode_bool(true))/binary, (encode_type(Value, TypeX))/binary>>;
+encode_either_x_or_y({x, Value}, TypeX, _TypeY) ->
+    <<(encode_bool(true))/binary, (encode_type(Value, TypeX))/binary>>;
+encode_either_x_or_y({true, Value}, TypeX, _TypeY) ->
+    <<(encode_bool(true))/binary, (encode_type(Value, TypeX))/binary>>;
+encode_either_x_or_y({right, Value}, _TypeX, TypeY) ->
+    <<(encode_bool(false))/binary, (encode_type(Value, TypeY))/binary>>;
+encode_either_x_or_y({y, Value}, _TypeX, TypeY) ->
+    <<(encode_bool(false))/binary, (encode_type(Value, TypeY))/binary>>;
+encode_either_x_or_y({false, Value}, _TypeX, TypeY) ->
+    <<(encode_bool(false))/binary, (encode_type(Value, TypeY))/binary>>.
+
+encode_game_profile({UUID, Username, Properties}) ->
+    UUIDBin = encode_uuid(UUID),
+    UsernameBin = encode_string(Username),
+    CountBin = encode_varint(length(Properties)),
+    PropertiesBin = encode_properties(Properties),
+    <<UUIDBin/binary, UsernameBin/binary, CountBin/binary, PropertiesBin/binary>>.
+
+encode_properties(Properties) when is_list(Properties) ->
+    iolist_to_binary([encode_property(Prop) || Prop <- Properties]).
+
+encode_property({Name, Value, Signature}) ->
+    NameBin = encode_string(Name),
+    ValueBin = encode_string(Value),
+    SigBin = encode_prefixed_optional(Signature, string),
+    <<NameBin/binary, ValueBin/binary, SigBin/binary>>;
+encode_property({Name, Value}) ->
+    encode_property({Name, Value, none});
+encode_property(#{name := Name, value := Value} = Prop) ->
+    Sig = maps:get(signature, Prop, none),
+    encode_property({Name, Value, Sig}).
+
+encode_resolvable_profile({ProfileKind, Profile, Body, Cape, Elytra, Model}, BodyOption, CapeOption, ElytraOption, ModelOption) ->
+    ProfileKindBin = encode_varint(ProfileKind),
+    ProfileBin = pack_resolvable_profile(ProfileKind, Profile),
+    BodyBin = encode_optional(Body, identifier, BodyOption),
+    CapeBin = encode_optional(Cape, identifier, CapeOption),
+    ElytraBin = encode_optional(Elytra, identifier, ElytraOption),
+    ModelBin = encode_optional(Model, varint, ModelOption),
+    <<ProfileKindBin/binary, ProfileBin/binary, BodyBin/binary, CapeBin/binary, ElytraBin/binary, ModelBin/binary>>;
+encode_resolvable_profile(Data, BodyOption, CapeOption, ElytraOption, ModelOption) when is_map(Data) ->
+    ProfileKind = maps:get(profile_kind, Data, 0),
+    Profile = maps:get(profile, Data, {}),
+    Body = maps:get(body, Data, none),
+    Cape = maps:get(cape, Data, none),
+    Elytra = maps:get(elytra, Data, none),
+    Model = maps:get(model, Data, none),
+    encode_resolvable_profile({ProfileKind, Profile, Body, Cape, Elytra, Model}, BodyOption, CapeOption, ElytraOption, ModelOption).
+
+encode_resolvable_profile({ProfileKind, Profile, Body, Cape, Elytra, Model}) ->
+    BodyOption = Body =/= none andalso Body =/= undefined,
+    CapeOption = Cape =/= none andalso Cape =/= undefined,
+    ElytraOption = Elytra =/= none andalso Elytra =/= undefined,
+    ModelOption = Model =/= none andalso Model =/= undefined,
+    encode_resolvable_profile({ProfileKind, Profile, Body, Cape, Elytra, Model}, BodyOption, CapeOption, ElytraOption, ModelOption);
+encode_resolvable_profile(#{profile_kind := ProfileKind} = Map) ->
+    Profile = maps:get(profile, Map, {}),
+    Body = maps:get(body, Map, none),
+    Cape = maps:get(cape, Map, none),
+    Elytra = maps:get(elytra, Map, none),
+    Model = maps:get(model, Map, none),
+    encode_resolvable_profile({ProfileKind, Profile, Body, Cape, Elytra, Model}).
+
+pack_resolvable_profile(0, {Username, UUID, Properties}) ->
+    UserBin = encode_prefixed_optional(Username, string),
+    UuidBin = encode_prefixed_optional(UUID, uuid),
+    LenBin = encode_varint(length(Properties)),
+    PropsBin = encode_properties(Properties),
+    <<UserBin/binary, UuidBin/binary, LenBin/binary, PropsBin/binary>>;
+pack_resolvable_profile(1, GameProfile) ->
+    encode_game_profile(GameProfile).
+
+encode_debug_subscription_event({Type, Data}) when is_integer(Type) ->
+    TypeBin = encode_enum(Type),
+    DataBin = encode_debug_subscription_data(Data, Type),
+    <<TypeBin/binary, DataBin/binary>>;
+encode_debug_subscription_event(Record) ->
+    Type = debug_subscription_type_id(Record),
+    TypeBin = encode_enum(Type),
+    DataBin = encode_debug_subscription_data(Record, Type),
+    <<TypeBin/binary, DataBin/binary>>.
+
+encode_debug_subscription_update({Type, OptData}) when is_integer(Type) ->
+    TypeBin = encode_enum(Type),
+    DataBin = encode_prefixed_optional(OptData, {debug_subscription_data, Type}),
+    <<TypeBin/binary, DataBin/binary>>;
+encode_debug_subscription_update({some, Record}) ->
+    Type = debug_subscription_type_id(Record),
+    TypeBin = encode_enum(Type),
+    DataBin = encode_prefixed_optional({some, Record}, {debug_subscription_data, Type}),
+    <<TypeBin/binary, DataBin/binary>>;
+encode_debug_subscription_update(none) ->
+    TypeBin = encode_enum(0),
+    DataBin = encode_prefixed_optional(none, {debug_subscription_data, 0}),
+    <<TypeBin/binary, DataBin/binary>>;
+encode_debug_subscription_update(undefined) ->
+    TypeBin = encode_enum(0),
+    DataBin = encode_prefixed_optional(none, {debug_subscription_data, 0}),
+    <<TypeBin/binary, DataBin/binary>>;
+encode_debug_subscription_update(Record) when is_tuple(Record) ->
+    Type = debug_subscription_type_id(Record),
+    TypeBin = encode_enum(Type),
+    DataBin = encode_prefixed_optional({some, Record}, {debug_subscription_data, Type}),
+    <<TypeBin/binary, DataBin/binary>>.
+
+encode_debug_subscription_data(_Data, 0) ->
+    <<>>;
+encode_debug_subscription_data(#bee{hive_position = HivePos, flower_position = FlowerPos, travel_ticks = Ticks, blacklisted_hives = Blacklist}, 1) ->
+    HiveBin = encode_prefixed_optional(HivePos, position),
+    FlowerBin = encode_prefixed_optional(FlowerPos, position),
+    TicksBin = encode_varint(Ticks),
+    BlacklistBin = encode_prefixed_array(Blacklist, position),
+    <<HiveBin/binary, FlowerBin/binary, TicksBin/binary, BlacklistBin/binary>>;
+encode_debug_subscription_data({HivePos, FlowerPos, Ticks, Blacklist}, 1) ->
+    HiveBin = encode_prefixed_optional(HivePos, position),
+    FlowerBin = encode_prefixed_optional(FlowerPos, position),
+    TicksBin = encode_varint(Ticks),
+    BlacklistBin = encode_prefixed_array(Blacklist, position),
+    <<HiveBin/binary, FlowerBin/binary, TicksBin/binary, BlacklistBin/binary>>;
+encode_debug_subscription_data(#villager_brain{name = Name, profession = Prof, xp = XP, health = Health, max_health = MaxHealth, inventory = Inv, wants_golem = WantsGolem, anger_level = Anger, activities = Act, behaviors = Beh, memories = Mem, gossips = Gos, pois = POIs, potential_pois = PotPOIs}, 2) ->
+    NameBin = encode_string(Name),
+    ProfBin = encode_string(Prof),
+    XpBin = encode_int(XP),
+    HealthBin = encode_float(Health),
+    MaxHealthBin = encode_float(MaxHealth),
+    InvBin = encode_string(Inv),
+    WantsGolemBin = encode_bool(WantsGolem),
+    AngerBin = encode_int(Anger),
+    ActBin = encode_prefixed_array(Act, string),
+    BehBin = encode_prefixed_array(Beh, string),
+    MemBin = encode_prefixed_array(Mem, string),
+    GosBin = encode_prefixed_array(Gos, string),
+    PoisBin = encode_prefixed_array(POIs, position),
+    PotPoisBin = encode_prefixed_array(PotPOIs, position),
+    <<NameBin/binary, ProfBin/binary, XpBin/binary, HealthBin/binary, MaxHealthBin/binary, InvBin/binary, WantsGolemBin/binary, AngerBin/binary, ActBin/binary, BehBin/binary, MemBin/binary, GosBin/binary, PoisBin/binary, PotPoisBin/binary>>;
+encode_debug_subscription_data(#breeze{attack_target = Atk, jump_target = Jump}, 3) ->
+    AtkBin = encode_prefixed_optional(Atk, varint),
+    JumpBin = encode_prefixed_optional(Jump, position),
+    <<AtkBin/binary, JumpBin/binary>>;
+encode_debug_subscription_data({Atk, Jump}, 3) ->
+    AtkBin = encode_prefixed_optional(Atk, varint),
+    JumpBin = encode_prefixed_optional(Jump, position),
+    <<AtkBin/binary, JumpBin/binary>>;
+encode_debug_subscription_data(#goal_selector{priority = Priority, is_running = IsRunning, name = Name}, 4) ->
+    PrioBin = encode_varint(Priority),
+    RunBin = encode_bool(IsRunning),
+    NameBin = encode_string(Name),
+    <<PrioBin/binary, RunBin/binary, NameBin/binary>>;
+encode_debug_subscription_data({Priority, IsRunning, Name}, 4) ->
+    PrioBin = encode_varint(Priority),
+    RunBin = encode_bool(IsRunning),
+    NameBin = encode_string(Name),
+    <<PrioBin/binary, RunBin/binary, NameBin/binary>>;
+encode_debug_subscription_data(#entity_path{reached = Reached, next_block_index = NextIdx, block_position = Pos, nodes = Nodes, target_nodes = TargetNodes, open_set = OpenSet, closed_set = ClosedSet, max_node_distance = MaxDist}, 5) ->
+    ReachedBin = encode_bool(Reached),
+    NextIdxBin = encode_int(NextIdx),
+    PosBin = encode_position(Pos),
+    NodesBin = encode_prefixed_array(Nodes, debug_path_node),
+    TargetNodesBin = encode_prefixed_array(TargetNodes, debug_path_node),
+    OpenSetBin = encode_prefixed_array(OpenSet, debug_path_node),
+    ClosedSetBin = encode_prefixed_array(ClosedSet, debug_path_node),
+    MaxDistBin = encode_float(MaxDist),
+    <<ReachedBin/binary, NextIdxBin/binary, PosBin/binary, NodesBin/binary, TargetNodesBin/binary, OpenSetBin/binary, ClosedSetBin/binary, MaxDistBin/binary>>;
+encode_debug_subscription_data({Reached, NextIdx, Pos, Nodes, TargetNodes, OpenSet, ClosedSet, MaxDist}, 5) ->
+    ReachedBin = encode_bool(Reached),
+    NextIdxBin = encode_int(NextIdx),
+    PosBin = encode_position(Pos),
+    NodesBin = encode_prefixed_array(Nodes, debug_path_node),
+    TargetNodesBin = encode_prefixed_array(TargetNodes, debug_path_node),
+    OpenSetBin = encode_prefixed_array(OpenSet, debug_path_node),
+    ClosedSetBin = encode_prefixed_array(ClosedSet, debug_path_node),
+    MaxDistBin = encode_float(MaxDist),
+    <<ReachedBin/binary, NextIdxBin/binary, PosBin/binary, NodesBin/binary, TargetNodesBin/binary, OpenSetBin/binary, ClosedSetBin/binary, MaxDistBin/binary>>;
+encode_debug_subscription_data(#entity_block_intersection{id = ID}, 6) ->
+    encode_enum(ID);
+encode_debug_subscription_data(ID, 6) when is_integer(ID) ->
+    encode_enum(ID);
+encode_debug_subscription_data(#bee_hive{hive_type = HiveType, occupant_count = OccCount, honey_level = HoneyLevel, sedated = Sedated}, 7) ->
+    TypeBin = encode_enum(HiveType),
+    OccBin = encode_varint(OccCount),
+    HoneyBin = encode_varint(HoneyLevel),
+    SedatedBin = encode_bool(Sedated),
+    <<TypeBin/binary, OccBin/binary, HoneyBin/binary, SedatedBin/binary>>;
+encode_debug_subscription_data({HiveType, OccCount, HoneyLevel, Sedated}, 7) ->
+    TypeBin = encode_enum(HiveType),
+    OccBin = encode_varint(OccCount),
+    HoneyBin = encode_varint(HoneyLevel),
+    SedatedBin = encode_bool(Sedated),
+    <<TypeBin/binary, OccBin/binary, HoneyBin/binary, SedatedBin/binary>>;
+encode_debug_subscription_data(#poi{position = Pos, poi_type = POIType, free_ticket_count = Count}, 8) ->
+    PosBin = encode_position(Pos),
+    TypeBin = encode_enum(POIType),
+    CountBin = encode_varint(Count),
+    <<PosBin/binary, TypeBin/binary, CountBin/binary>>;
+encode_debug_subscription_data({Pos, POIType, Count}, 8) ->
+    PosBin = encode_position(Pos),
+    TypeBin = encode_enum(POIType),
+    CountBin = encode_varint(Count),
+    <<PosBin/binary, TypeBin/binary, CountBin/binary>>;
+encode_debug_subscription_data(#redstone_wire_orientation{id = ID}, 9) ->
+    encode_varint(ID);
+encode_debug_subscription_data(ID, 9) when is_integer(ID) ->
+    encode_varint(ID);
+encode_debug_subscription_data(_Data, 10) ->
+    <<>>;
+encode_debug_subscription_data(#raid{positions = Positions}, 11) ->
+    encode_prefixed_array(Positions, position);
+encode_debug_subscription_data(Positions, 11) when is_list(Positions) ->
+    encode_prefixed_array(Positions, position);
+encode_debug_subscription_data(#structure{structures = Structures}, 12) ->
+    encode_prefixed_array(Structures, debug_structure_info);
+encode_debug_subscription_data(Structures, 12) when is_list(Structures) ->
+    encode_prefixed_array(Structures, debug_structure_info);
+encode_debug_subscription_data(#game_event_listener{listener_radius = Radius}, 13) ->
+    encode_varint(Radius);
+encode_debug_subscription_data(Radius, 13) when is_integer(Radius) ->
+    encode_varint(Radius);
+encode_debug_subscription_data(#neighbor_update{position = Pos}, 14) ->
+    encode_position(Pos);
+encode_debug_subscription_data(Pos, 14) when is_tuple(Pos) ->
+    encode_position(Pos);
+encode_debug_subscription_data(#game_event{event = Event, x = X, y = Y, z = Z}, 15) ->
+    EventBin = encode_enum(Event),
+    XBin = encode_double(X),
+    YBin = encode_double(Y),
+    ZBin = encode_double(Z),
+    <<EventBin/binary, XBin/binary, YBin/binary, ZBin/binary>>;
+encode_debug_subscription_data({Event, X, Y, Z}, 15) ->
+    EventBin = encode_enum(Event),
+    XBin = encode_double(X),
+    YBin = encode_double(Y),
+    ZBin = encode_double(Z),
+    <<EventBin/binary, XBin/binary, YBin/binary, ZBin/binary>>.
+
+encode_debug_path_node({X, Y, Z, WalkCost, Penalty, Open, Type, HeapIndex}) ->
+    XBin = encode_int(X),
+    YBin = encode_int(Y),
+    ZBin = encode_int(Z),
+    WalkBin = encode_float(WalkCost),
+    PenBin = encode_float(Penalty),
+    OpenBin = encode_bool(Open),
+    TypeBin = encode_varint(Type),
+    HeapBin = encode_int(HeapIndex),
+    <<XBin/binary, YBin/binary, ZBin/binary, WalkBin/binary, PenBin/binary, OpenBin/binary, TypeBin/binary, HeapBin/binary>>.
+
+encode_debug_structure_info({{MinX, MinY, MinZ, MaxX, MaxY, MaxZ}, Pieces}) ->
+    MinXBin = encode_int(MinX),
+    MinYBin = encode_int(MinY),
+    MinZBin = encode_int(MinZ),
+    MaxXBin = encode_int(MaxX),
+    MaxYBin = encode_int(MaxY),
+    MaxZBin = encode_int(MaxZ),
+    PiecesBin = encode_prefixed_array(Pieces, debug_structure_piece),
+    <<MinXBin/binary, MinYBin/binary, MinZBin/binary, MaxXBin/binary, MaxYBin/binary, MaxZBin/binary, PiecesBin/binary>>.
+
+encode_debug_structure_piece({{MinX, MinY, MinZ, MaxX, MaxY, MaxZ}, IsStart}) ->
+    MinXBin = encode_int(MinX),
+    MinYBin = encode_int(MinY),
+    MinZBin = encode_int(MinZ),
+    MaxXBin = encode_int(MaxX),
+    MaxYBin = encode_int(MaxY),
+    MaxZBin = encode_int(MaxZ),
+    StartBin = encode_bool(IsStart),
+    <<MinXBin/binary, MinYBin/binary, MinZBin/binary, MaxXBin/binary, MaxYBin/binary, MaxZBin/binary, StartBin/binary>>.
+
+debug_subscription_type_id(0) -> 0;
+debug_subscription_type_id(1) -> 1;
+debug_subscription_type_id(2) -> 2;
+debug_subscription_type_id(3) -> 3;
+debug_subscription_type_id(4) -> 4;
+debug_subscription_type_id(5) -> 5;
+debug_subscription_type_id(6) -> 6;
+debug_subscription_type_id(7) -> 7;
+debug_subscription_type_id(8) -> 8;
+debug_subscription_type_id(9) -> 9;
+debug_subscription_type_id(10) -> 10;
+debug_subscription_type_id(11) -> 11;
+debug_subscription_type_id(12) -> 12;
+debug_subscription_type_id(13) -> 13;
+debug_subscription_type_id(14) -> 14;
+debug_subscription_type_id(15) -> 15;
+debug_subscription_type_id(#dedicated_server_tick_time{}) -> 0;
+debug_subscription_type_id(#bee{}) -> 1;
+debug_subscription_type_id(#villager_brain{}) -> 2;
+debug_subscription_type_id(#breeze{}) -> 3;
+debug_subscription_type_id(#goal_selector{}) -> 4;
+debug_subscription_type_id(#entity_path{}) -> 5;
+debug_subscription_type_id(#entity_block_intersection{}) -> 6;
+debug_subscription_type_id(#bee_hive{}) -> 7;
+debug_subscription_type_id(#poi{}) -> 8;
+debug_subscription_type_id(#redstone_wire_orientation{}) -> 9;
+debug_subscription_type_id(#village_section{}) -> 10;
+debug_subscription_type_id(#raid{}) -> 11;
+debug_subscription_type_id(#structure{}) -> 12;
+debug_subscription_type_id(#game_event_listener{}) -> 13;
+debug_subscription_type_id(#neighbor_update{}) -> 14;
+debug_subscription_type_id(#game_event{}) -> 15;
+debug_subscription_type_id(dedicated_server_tick_time) -> 0;
+debug_subscription_type_id(bee) -> 1;
+debug_subscription_type_id(villager_brain) -> 2;
+debug_subscription_type_id(breeze) -> 3;
+debug_subscription_type_id(goal_selector) -> 4;
+debug_subscription_type_id(entity_path) -> 5;
+debug_subscription_type_id(entity_block_intersection) -> 6;
+debug_subscription_type_id(bee_hive) -> 7;
+debug_subscription_type_id(poi) -> 8;
+debug_subscription_type_id(redstone_wire_orientation) -> 9;
+debug_subscription_type_id(village_section) -> 10;
+debug_subscription_type_id(raid) -> 11;
+debug_subscription_type_id(structure) -> 12;
+debug_subscription_type_id(game_event_listener) -> 13;
+debug_subscription_type_id(neighbor_update) -> 14;
+debug_subscription_type_id(game_event) -> 15;
+debug_subscription_type_id(#{type := Type}) -> debug_subscription_type_id(Type).
+
+
+
+
+
+
