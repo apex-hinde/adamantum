@@ -67,6 +67,8 @@ encode_type(Data, Type) ->
             encode_array(Data, ElemType);
         {array, Arg1, Arg2} ->
             encode_array(Data, Arg1, Arg2);
+        {prefixed_array, ElemList} when is_list(ElemList) ->
+            encode_prefixed_array_list(Data, ElemList);
         {prefixed_array, ElemType} ->
             encode_prefixed_array(Data, ElemType);
         {prefixed_array, PrefixType, ElemType} ->
@@ -119,7 +121,11 @@ encode_type(Data, Type) ->
         debug_structure_info ->
             encode_debug_structure_info(Data);
         debug_structure_piece ->
-            encode_debug_structure_piece(Data)
+            encode_debug_structure_piece(Data);
+
+        %% Component Data Types
+        _ ->
+            component_encode:encode_component(Type, Data)
     end.
 
 encode_bool(true) -> <<1:8>>;
@@ -323,6 +329,19 @@ encode_prefixed_array(List, PrefixType, ElemType) when is_list(List) ->
     LenBin = encode_type(length(List), PrefixType),
     ArrayBin = encode_array_loop(List, ElemType, <<>>),
     <<LenBin/binary, ArrayBin/binary>>.
+
+encode_prefixed_array_list(Data, ElemList) ->
+    encode_prefixed_array_list(Data, varint, ElemList).
+
+encode_prefixed_array_list(List, PrefixType, ElemList) when is_list(List), is_list(ElemList) ->
+    LenBin = encode_type(length(List), PrefixType),
+    ItemsBin = list_to_binary([encode_tuple_elements(Item, ElemList) || Item <- List]),
+    <<LenBin/binary, ItemsBin/binary>>.
+
+encode_tuple_elements(Tuple, ElemList) when is_tuple(Tuple) ->
+    encode_tuple_elements(tuple_to_list(Tuple), ElemList);
+encode_tuple_elements(List, ElemList) when is_list(List) ->
+    list_to_binary(lists:zipwith(fun(Val, Type) -> encode_type(Val, Type) end, List, ElemList)).
 
 encode_enum(Data) ->
     encode_enum(Data, varint).

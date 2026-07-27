@@ -56,8 +56,12 @@ decode_type(Data, Type) ->
             decode_optional(Data, Inner_Type, Bool);
         {optional, Inner_Type} ->
             decode_prefixed_optional(Data, Inner_Type);
+        {prefixed_optional, Inner_Type} ->
+            decode_prefixed_optional(Data, Inner_Type);
         {array, Arg1, Arg2} ->
             decode_array(Data, Arg1, Arg2);
+        {prefixed_array, ElemList} when is_list(ElemList) ->
+            decode_prefixed_array_list(Data, ElemList);
         {prefixed_array, ElemType} ->
             decode_prefixed_array(Data, ElemType);
         {prefixed_array, PrefixType, ElemType} ->
@@ -105,7 +109,15 @@ decode_type(Data, Type) ->
         debug_structure_info ->
             decode_debug_structure_info(Data);
         debug_structure_piece ->
-            decode_debug_structure_piece(Data)
+            decode_debug_structure_piece(Data);
+
+        %%Component Data Types
+        _ -> 
+            component_decode:decode_component(Data, Type)
+
+
+
+
     end.
 
 decode_bool(Data) ->
@@ -246,6 +258,10 @@ decode_id_or_x(Data, InnerType) ->
     end.
 
 
+decode_array(Data, Count, ElemList) when is_integer(Count), Count >= 0, is_list(ElemList) ->
+    decode_array_list(Data, Count, ElemList);
+decode_array(Data, ElemList, Count) when is_integer(Count), Count >= 0, is_list(ElemList) ->
+    decode_array_list(Data, Count, ElemList);
 decode_array(Data, Count, ElemType) when is_integer(Count), Count >= 0 ->
     decode_array_loop(Data, Count, ElemType, []);
 decode_array(Data, ElemType, Count) when is_integer(Count), Count >= 0 ->
@@ -268,6 +284,37 @@ decode_prefixed_array(Data, varint, ElemType) ->
 decode_prefixed_array(Data, PrefixType, ElemType) ->
     {RestData, Count} = decode_type(Data, PrefixType),
     decode_array(RestData, Count, ElemType).
+
+decode_array_list(Data, Count, ElemList) when is_integer(Count), Count >= 0 ->
+    decode_array_loop_list(Data, Count, ElemList, []);
+decode_array_list(Data, ElemList, Count) when is_integer(Count), Count >= 0 ->
+    decode_array_loop_list(Data, Count, ElemList, []).
+
+decode_array_loop_list(Data, 0, _ElemList, Acc) ->
+    {Data, lists:reverse(Acc)};
+decode_array_loop_list(Data, Count, ElemList, Acc) ->
+    {DecodedFields, RestData} = lists:mapfoldl(
+        fun(ElemType, AccData) ->
+            {NewData, Elem} = decode_type(AccData, ElemType),
+            {Elem, NewData}
+        end,
+        Data,
+        ElemList
+    ),
+    decode_array_loop_list(RestData, Count - 1, ElemList, [list_to_tuple(DecodedFields) | Acc]).
+
+decode_prefixed_array_list(Data, ElemList) ->
+    {RestData, Count} = decode_varint(Data),
+    decode_array_list(RestData, Count, ElemList).
+
+decode_prefixed_array_list(Data, varint, ElemList) ->
+    {RestData, Count} = decode_varint(Data),
+    decode_array_list(RestData, Count, ElemList);
+
+decode_prefixed_array_list(Data, PrefixType, ElemList) ->
+    {RestData, Count} = decode_type(Data, PrefixType),
+    decode_array_list(RestData, Count, ElemList).
+
 
 decode_enum(Data) ->
     decode_enum(Data, varint).
