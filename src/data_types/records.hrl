@@ -1,44 +1,44 @@
-%%-record(bool, {bool}).
-%%-record(byte, {byte}).
-%%-record(ubyte, {ubyte}).
-%%-record(short, {short}).
-%%-record(ushort, {ushort}).
-%%-record(int, {int}).
-%%-record(long, {long}).
-%%-record(float, {float}).
-%%-record(double, {double}).
-%%-record(string, {string}).
-%%-record(text_componant, {component_map}).
-%%-record(json_text_componant, {json_component_map}).
-%%-record(identifier, {identifier}).
-%%-record(varint, {varint}).
-%%-record(varlong, {varlong}).
-%%-record(entity_metadata, {}). %todo
-%%-record(slot, {item_count, itemID, components_to_add, components_to_remove}).
-%%-record(hashed_slot, {item_count, itemID, components_to_add, components_to_remove}).
-%%-record(nbt, {nbt}).
-%%-record(position, {x, y, z}).
-%%-record(angle, {angle}).
-%%-record(uuid, {uuid}).
-%%-record(bitset, {bitset}).
-%%-record(fixed_bitset, {fixed_bitset}).
-%%-record(optional, {fixed_bitset}).
-%%-record(prefixed_optional, {fixed_bitset}).
-%%-record(array, {array}).
-%%-record(prefixed_array, {prefixed_array}).
-%%-record(enum, {enum}).
-%%-record(byte_array, {byte_array}).
-%%-record(id_or_x, {id_or_x}).
-%%-record(id_set, {id_set}).
-%%-record(sound_event, {sound_name, has_fixed_value, fixed_range}).
-%%-record(chat_type, {}).
-%%-record(teleport_flags, {flagsmap}).
-%%-record(light_data, {}).
-%%-record(either_x_or_y, {x, y}).
-%%-record(game_profile, {}).
-%%-record(resolvable_profile, {}).
-%%-record(debug_subscription_event, {}).
-%%-record(lp_vec3, {}).
+-record(bool, {bool}).
+-record(byte, {byte}).
+-record(ubyte, {ubyte}).
+-record(short, {short}).
+-record(ushort, {ushort}).
+-record(int, {int}).
+-record(long, {long}).
+-record(float, {float}).
+-record(double, {double}).
+-record(string, {string}).
+-record(text_component, {component_map}).
+-record(json_text_component, {json_component_map}).
+-record(identifier, {identifier}).
+-record(varint, {varint}).
+-record(varlong, {varlong}).
+-record(entity_metadata, {}). %todo
+-record(slot, {item_count, itemID, components_to_add, components_to_remove}).
+-record(hashed_slot, {item_count, itemID, components_to_add, components_to_remove}).
+-record(nbt, {nbt}).
+-record(position, {x, y, z}).
+-record(angle, {angle}).
+-record(uuid, {uuid}).
+-record(bitset, {bitset}).
+-record(fixed_bitset, {fixed_bitset}).
+-record(optional, {some, optional}).
+-record(prefixed_optional, {some, prefixed_optional}).
+-record(array, {array}).
+-record(prefixed_array, {prefixed_array}).
+-record(enum, {enum}).
+-record(byte_array, {byte_array}).
+-record(id_or_x, {id_or_x}).
+-record(id_set, {id_set}).
+-record(sound_event, {sound_name, has_fixed_value, fixed_range}).
+-record(chat_type, {}).
+-record(teleport_flags, {flagsmap}).
+-record(light_data, {}).
+-record(either_x_or_y, {x, y}).
+-record(game_profile, {uuid, username, properties}).
+-record(resolvable_profile, {profile_kind, profile, body, cape, elytra, model}).
+-record(debug_subscription_event, {}).
+-record(lp_vec3, {}).
 
 
 
@@ -80,3 +80,6 @@
 -record(game_event_listener, {type, listener_radius}).
 -record(neighbor_update, {type, position}).
 -record(game_event, {type, event, x, y, z}).
+-record(debug_path_node, {x, y, z, walk_cost, penalty, open, type, heap_index}).
+-record(debug_structure_info, {min_x, min_y, min_z, max_x, max_y, max_z, pieces}).
+-record(debug_structure_piece, {min_x, min_y, min_z, max_x, max_y, max_z, is_start}).

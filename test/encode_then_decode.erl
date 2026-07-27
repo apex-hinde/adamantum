@@ -4,271 +4,271 @@
 
 
 bool_test() ->
-    {<<>>, true} = decode:decode_type(encode:encode_type(true, bool), bool),
-    {<<>>, false} = decode:decode_type(encode:encode_type(false, bool), bool).
+    {<<>>, #bool{bool = true}} = decode:decode_type(encode:encode_type(true, bool), bool),
+    {<<>>, #bool{bool = false}} = decode:decode_type(encode:encode_type(false, bool), bool).
 
 byte_test() ->
-    {<<>>, 42} = decode:decode_type(encode:encode_type(42, byte), byte),
-    {<<>>, -42} = decode:decode_type(encode:encode_type(-42, byte), byte).
+    {<<>>, #byte{byte = 42}} = decode:decode_type(encode:encode_type(42, byte), byte),
+    {<<>>, #byte{byte = -42}} = decode:decode_type(encode:encode_type(-42, byte), byte).
 
 ubyte_test() ->
-    {<<>>, 200} = decode:decode_type(encode:encode_type(200, ubyte), ubyte).
+    {<<>>, #ubyte{ubyte = 200}} = decode:decode_type(encode:encode_type(200, ubyte), ubyte).
 
 short_test() ->
-    {<<>>, 12345} = decode:decode_type(encode:encode_type(12345, short), short),
-    {<<>>, -12345} = decode:decode_type(encode:encode_type(-12345, short), short).
+    {<<>>, #short{short = 12345}} = decode:decode_type(encode:encode_type(12345, short), short),
+    {<<>>, #short{short = -12345}} = decode:decode_type(encode:encode_type(-12345, short), short).
 
 ushort_test() ->
-    {<<>>, 50000} = decode:decode_type(encode:encode_type(50000, ushort), ushort).
+    {<<>>, #ushort{ushort = 50000}} = decode:decode_type(encode:encode_type(50000, ushort), ushort).
 
 int_test() ->
-    {<<>>, 1000000} = decode:decode_type(encode:encode_type(1000000, int), int),
-    {<<>>, -1000000} = decode:decode_type(encode:encode_type(-1000000, int), int).
+    {<<>>, #int{int = 1000000}} = decode:decode_type(encode:encode_type(1000000, int), int),
+    {<<>>, #int{int = -1000000}} = decode:decode_type(encode:encode_type(-1000000, int), int).
 
 long_test() ->
     Val = 9223372036854775807,
-    {<<>>, Val} = decode:decode_type(encode:encode_type(Val, long), long).
+    {<<>>, #long{long = Val}} = decode:decode_type(encode:encode_type(Val, long), long).
 
 float_test() ->
     Val = 3.14159,
     Encoded = encode:encode_type(Val, float),
-    {<<>>, Decoded} = decode:decode_type(Encoded, float),
+    {<<>>, #float{float = Decoded}} = decode:decode_type(Encoded, float),
     ?assert(abs(Val - Decoded) < 0.0001).
 
 double_test() ->
     Val = 3.141592653589793,
     Encoded = encode:encode_type(Val, double),
-    {<<>>, Decoded} = decode:decode_type(Encoded, double),
+    {<<>>, #double{double = Decoded}} = decode:decode_type(Encoded, double),
     ?assertEqual(Val, Decoded).
 
 string_test() ->
     Str = "Hello Minecraft!",
     Encoded = encode:encode_type(Str, string),
-    {<<>>, Decoded} = decode:decode_type(Encoded, string),
+    {<<>>, #string{string = Decoded}} = decode:decode_type(Encoded, string),
     ?assertEqual(Str, Decoded),
     EncodedBin = encode:encode_type(<<"Hello Minecraft!">>, string),
-    {<<>>, Decoded2} = decode:decode_type(EncodedBin, string),
+    {<<>>, #string{string = Decoded2}} = decode:decode_type(EncodedBin, string),
     ?assertEqual(Str, Decoded2).
 
 json_text_component_test() ->
     Map = #{<<"text">> => <<"Hello world">>, <<"color">> => <<"blue">>},
     EncodedMap = encode:encode_type(Map, json_text_component),
-    {<<>>, DecodedMap} = decode:decode_type(EncodedMap, json_text_component),
+    {<<>>, #json_text_component{json_component_map = DecodedMap}} = decode:decode_type(EncodedMap, json_text_component),
     ?assertEqual(Map, DecodedMap),
 
     RawJson = <<"{\"text\":\"Hello\",\"bold\":true}">>,
     EncodedRaw = encode:encode_type(RawJson, json_text_component),
-    {<<>>, DecodedRaw} = decode:decode_type(EncodedRaw, json_text_component),
+    {<<>>, #json_text_component{json_component_map = DecodedRaw}} = decode:decode_type(EncodedRaw, json_text_component),
     ?assertEqual(#{<<"text">> => <<"Hello">>, <<"bold">> => true}, DecodedRaw),
 
     CompList = [#{<<"text">> => <<"Part 1">>}, #{<<"text">> => <<"Part 2">>}],
     EncodedList = encode:encode_type(CompList, json_text_component),
-    {<<>>, DecodedList} = decode:decode_type(EncodedList, json_text_component),
+    {<<>>, #json_text_component{json_component_map = DecodedList}} = decode:decode_type(EncodedList, json_text_component),
     ?assertEqual(CompList, DecodedList).
 
 varint_test() ->
-    {<<>>, 0} = decode:decode_type(encode:encode_type(0, varint), varint),
-    {<<>>, 128} = decode:decode_type(encode:encode_type(128, varint), varint),
-    {<<>>, 300} = decode:decode_type(encode:encode_type(300, varint), varint),
-    {<<>>, 2147483647} = decode:decode_type(encode:encode_type(2147483647, varint), varint),
-    {<<>>, -1} = decode:decode_type(encode:encode_type(-1, varint), varint),
-    {<<>>, -2147483648} = decode:decode_type(encode:encode_type(-2147483648, varint), varint).
+    {<<>>, #varint{varint = 0}} = decode:decode_type(encode:encode_type(0, varint), varint),
+    {<<>>, #varint{varint = 128}} = decode:decode_type(encode:encode_type(128, varint), varint),
+    {<<>>, #varint{varint = 300}} = decode:decode_type(encode:encode_type(300, varint), varint),
+    {<<>>, #varint{varint = 2147483647}} = decode:decode_type(encode:encode_type(2147483647, varint), varint),
+    {<<>>, #varint{varint = -1}} = decode:decode_type(encode:encode_type(-1, varint), varint),
+    {<<>>, #varint{varint = -2147483648}} = decode:decode_type(encode:encode_type(-2147483648, varint), varint).
 
 
 varlong_test() ->
-    {0, <<>>} = decode:decode_type(encode:encode_type(0, varlong), varlong),
-    {128, <<>>} = decode:decode_type(encode:encode_type(128, varlong), varlong),
-    {300, <<>>} = decode:decode_type(encode:encode_type(300, varlong), varlong),
-    {2147483647, <<>>} = decode:decode_type(encode:encode_type(2147483647, varlong), varlong),
-    {9223372036854775807, <<>>} = decode:decode_type(encode:encode_type(9223372036854775807, varlong), varlong),
-    {-1, <<>>} = decode:decode_type(encode:encode_type(-1, varlong), varlong),
-    {-9223372036854775808, <<>>} = decode:decode_type(encode:encode_type(-9223372036854775808, varlong), varlong).
+    {<<>>, #varlong{varlong = 0}} = decode:decode_type(encode:encode_type(0, varlong), varlong),
+    {<<>>, #varlong{varlong = 128}} = decode:decode_type(encode:encode_type(128, varlong), varlong),
+    {<<>>, #varlong{varlong = 300}} = decode:decode_type(encode:encode_type(300, varlong), varlong),
+    {<<>>, #varlong{varlong = 2147483647}} = decode:decode_type(encode:encode_type(2147483647, varlong), varlong),
+    {<<>>, #varlong{varlong = 9223372036854775807}} = decode:decode_type(encode:encode_type(9223372036854775807, varlong), varlong),
+    {<<>>, #varlong{varlong = -1}} = decode:decode_type(encode:encode_type(-1, varlong), varlong),
+    {<<>>, #varlong{varlong = -9223372036854775808}} = decode:decode_type(encode:encode_type(-9223372036854775808, varlong), varlong).
 
 identifier_test() ->
     Str = "minecraft:diamond",
     Encoded = encode:encode_type(Str, identifier),
-    {<<>>, Decoded} = decode:decode_type(Encoded, identifier),
+    {<<>>, #identifier{identifier = Decoded}} = decode:decode_type(Encoded, identifier),
     ?assertEqual(Str, Decoded).
 
 position_test() ->
     Pos = {100, -200, 50},
     Encoded = encode:encode_type(Pos, position),
-    {<<>>, Decoded} = decode:decode_type(Encoded, position),
-    ?assertEqual(Pos, Decoded).
+    {<<>>, #position{x = X, z = Z, y = Y}} = decode:decode_type(Encoded, position),
+    ?assertEqual(Pos, {X, Z, Y}).
 
 angle_test() ->
     Angle = 45,
     Encoded = encode:encode_type(Angle, angle),
-    {<<>>, Decoded} = decode:decode_type(Encoded, angle),
+    {<<>>, #angle{angle = Decoded}} = decode:decode_type(Encoded, angle),
     ?assertEqual(Angle, Decoded).
 
 uuid_test() ->
     UUID = <<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16>>,
     Encoded = encode:encode_type(UUID, uuid),
-    {<<>>, Decoded} = decode:decode_type(Encoded, uuid),
+    {<<>>, #uuid{uuid = Decoded}} = decode:decode_type(Encoded, uuid),
     ?assertEqual(UUID, Decoded).
 
 bitset_test() ->
     Val1 = -1,
     Encoded1 = encode:encode_type(Val1, bitset),
-    {<<>>, Decoded1} = decode:decode_type(Encoded1, bitset),
+    {<<>>, #bitset{bitset = Decoded1}} = decode:decode_type(Encoded1, bitset),
     ?assertEqual(Val1, Decoded1),
     Val2 = 256,
     Encoded2 = encode:encode_type(Val2, bitset),
-    {<<>>, Decoded2} = decode:decode_type(Encoded2, bitset),
+    {<<>>, #bitset{bitset = Decoded2}} = decode:decode_type(Encoded2, bitset),
     ?assertEqual(Val2, Decoded2).
 
 fixed_bitset_test() ->
     Val1 = -1,
     Encoded1 = encode:encode_type(Val1, fixed_bitset),
-    {<<>>, Decoded1} = decode:decode_type(Encoded1, fixed_bitset),
+    {<<>>, #fixed_bitset{fixed_bitset = Decoded1}} = decode:decode_type(Encoded1, fixed_bitset),
     ?assertEqual(Val1, Decoded1),
     Val2 = 256,
     Encoded2 = encode:encode_type(Val2, fixed_bitset),
-    {<<>>, Decoded2} = decode:decode_type(Encoded2, fixed_bitset),
+    {<<>>, #fixed_bitset{fixed_bitset = Decoded2}} = decode:decode_type(Encoded2, fixed_bitset),
     ?assertEqual(Val2, Decoded2).
 
 optional_test() ->
     EncPresent = encode:encode_type(42, {optional, int, true}),
-    ?assertEqual({<<>>, {some, 42}}, decode:decode_type(EncPresent, {optional, int, true})),
+    ?assertEqual({<<>>, #optional{some = some, optional = #int{int = 42}}}, decode:decode_type(EncPresent, {optional, int, true})),
 
     EncAbsent = encode:encode_type(42, {optional, int, false}),
-    ?assertEqual({<<>>, none}, decode:decode_type(EncAbsent, {optional, int, false})),
+    ?assertEqual({<<>>, #optional{some = none, optional = none}}, decode:decode_type(EncAbsent, {optional, int, false})),
 
     EncTaggedSome = encode:encode_type({some, "hello"}, {optional, string, true}),
-    ?assertEqual({<<>>, {some, "hello"}}, decode:decode_type(EncTaggedSome, {optional, string, true})),
+    ?assertEqual({<<>>, #optional{some = some, optional = #string{string = "hello"}}}, decode:decode_type(EncTaggedSome, {optional, string, true})),
 
     EncTaggedNone = encode:encode_type(none, {optional, string, false}),
-    ?assertEqual({<<>>, none}, decode:decode_type(EncTaggedNone, {optional, string, false})).
+    ?assertEqual({<<>>, #optional{some = none, optional = none}}, decode:decode_type(EncTaggedNone, {optional, string, false})).
 
 prefixed_optional_test() ->
     EncPresent = encode:encode_type({some, 42}, {optional, int}),
-    ?assertEqual({<<>>, {some, 42}}, decode:decode_type(EncPresent, {optional, int})),
+    ?assertEqual({<<>>, #prefixed_optional{some = some, prefixed_optional = #int{int = 42}}}, decode:decode_type(EncPresent, {optional, int})),
 
     EncAbsent = encode:encode_type(none, {optional, int}),
-    ?assertEqual({<<>>, none}, decode:decode_type(EncAbsent, {optional, int})),
+    ?assertEqual({<<>>, #prefixed_optional{some = none, prefixed_optional = none}}, decode:decode_type(EncAbsent, {optional, int})),
 
     EncVal = encode:encode_type("hello", {optional, string}),
-    ?assertEqual({<<>>, {some, "hello"}}, decode:decode_type(EncVal, {optional, string})).
+    ?assertEqual({<<>>, #prefixed_optional{some = some, prefixed_optional = #string{string = "hello"}}}, decode:decode_type(EncVal, {optional, string})).
 
 id_or_x_test() ->
     IdRef = {id, 5},
     Enc1 = encode:encode_type(IdRef, {id_or_x, string}),
-    ?assertEqual({<<>>, IdRef}, decode:decode_type(Enc1, {id_or_x, string})),
+    ?assertEqual({<<>>, #id_or_x{id_or_x = 5}}, decode:decode_type(Enc1, {id_or_x, string})),
 
     InlineVal = {val, "hello"},
     Enc2 = encode:encode_type(InlineVal, {id_or_x, string}),
-    ?assertEqual({<<>>, InlineVal}, decode:decode_type(Enc2, {id_or_x, string})),
+    ?assertEqual({<<>>, #id_or_x{id_or_x = #string{string = "hello"}}}, decode:decode_type(Enc2, {id_or_x, string})),
 
     RawVal = "hello",
     Enc3 = encode:encode_type(RawVal, {id_or_x, string}),
-    ?assertEqual({<<>>, {val, RawVal}}, decode:decode_type(Enc3, {id_or_x, string})),
+    ?assertEqual({<<>>, #id_or_x{id_or_x = #string{string = "hello"}}}, decode:decode_type(Enc3, {id_or_x, string})),
 
     IntVal = {val, 12345},
     Enc4 = encode:encode_type(IntVal, {id_or_x, int}),
-    ?assertEqual({<<>>, IntVal}, decode:decode_type(Enc4, {id_or_x, int})).
+    ?assertEqual({<<>>, #id_or_x{id_or_x = #int{int = 12345}}}, decode:decode_type(Enc4, {id_or_x, int})).
 
 id_set_test() ->
     TagVal = "minecraft:planks",
     EncTag = encode:encode_type(TagVal, id_set),
-    ?assertEqual({<<>>, TagVal}, decode:decode_type(EncTag, id_set)),
+    ?assertEqual({<<>>, #id_set{id_set = TagVal}}, decode:decode_type(EncTag, id_set)),
 
     IDsVal = [10, 20, 30, 40],
     EncIDs = encode:encode_type(IDsVal, id_set),
-    ?assertEqual({<<>>, IDsVal}, decode:decode_type(EncIDs, id_set)),
+    ?assertEqual({<<>>, #id_set{id_set = [10, 20, 30, 40]}}, decode:decode_type(EncIDs, id_set)),
 
     EmptyIDs = [],
     EncEmpty = encode:encode_type(EmptyIDs, id_set),
-    ?assertEqual({<<>>, EmptyIDs}, decode:decode_type(EncEmpty, id_set)).
+    ?assertEqual({<<>>, #id_set{id_set = []}}, decode:decode_type(EncEmpty, id_set)).
 
 array_test() ->
     ListInt = [10, 20, 30, 40],
     EncodedInt = encode:encode_type(ListInt, {array, int}),
-    ?assertEqual({<<>>, ListInt}, decode:decode_type(EncodedInt, {array, 4, int})),
+    ?assertEqual({<<>>, #array{array = [#int{int = 10}, #int{int = 20}, #int{int = 30}, #int{int = 40}]}}, decode:decode_type(EncodedInt, {array, 4, int})),
 
     ListStr = ["foo", "bar", "baz"],
     EncodedStr = encode:encode_type(ListStr, {array, string}),
-    ?assertEqual({<<>>, ListStr}, decode:decode_type(EncodedStr, {array, 3, string})),
+    ?assertEqual({<<>>, #array{array = [#string{string = "foo"}, #string{string = "bar"}, #string{string = "baz"}]}}, decode:decode_type(EncodedStr, {array, 3, string})),
 
     EmptyList = [],
     EncodedEmpty = encode:encode_type(EmptyList, {array, int}),
-    ?assertEqual({<<>>, []}, decode:decode_type(EncodedEmpty, {array, 0, int})).
+    ?assertEqual({<<>>, #array{array = []}}, decode:decode_type(EncodedEmpty, {array, 0, int})).
 
 prefixed_array_test() ->
     ListInt = [10, 20, 30, 40],
     EncodedInt = encode:encode_type(ListInt, {prefixed_array, int}),
-    ?assertEqual({<<>>, ListInt}, decode:decode_type(EncodedInt, {prefixed_array, int})),
+    ?assertEqual({<<>>, #prefixed_array{prefixed_array = [#int{int = 10}, #int{int = 20}, #int{int = 30}, #int{int = 40}]}}, decode:decode_type(EncodedInt, {prefixed_array, int})),
 
     ListStr = ["foo", "bar", "baz"],
     EncodedStr = encode:encode_type(ListStr, {prefixed_array, string}),
-    ?assertEqual({<<>>, ListStr}, decode:decode_type(EncodedStr, {prefixed_array, string})),
+    ?assertEqual({<<>>, #prefixed_array{prefixed_array = [#string{string = "foo"}, #string{string = "bar"}, #string{string = "baz"}]}}, decode:decode_type(EncodedStr, {prefixed_array, string})),
 
     EmptyList = [],
     EncodedEmpty = encode:encode_type(EmptyList, {prefixed_array, int}),
-    ?assertEqual({<<>>, []}, decode:decode_type(EncodedEmpty, {prefixed_array, int})),
+    ?assertEqual({<<>>, #prefixed_array{prefixed_array = []}}, decode:decode_type(EncodedEmpty, {prefixed_array, int})),
 
     ShortPrefixedList = [100, 200],
     EncodedShortPrefixed = encode:encode_type(ShortPrefixedList, {prefixed_array, short, int}),
-    ?assertEqual({<<>>, ShortPrefixedList}, decode:decode_type(EncodedShortPrefixed, {prefixed_array, short, int})).
+    ?assertEqual({<<>>, #prefixed_array{prefixed_array = [#int{int = 100}, #int{int = 200}]}}, decode:decode_type(EncodedShortPrefixed, {prefixed_array, short, int})).
 
 enum_test() ->
     Val = 42,
-    ?assertEqual({<<>>, Val}, decode:decode_type(encode:encode_type(Val, enum), enum)),
-    ?assertEqual({<<>>, Val}, decode:decode_type(encode:encode_type(Val, {enum, varint}), {enum, varint})),
-    ?assertEqual({<<>>, Val}, decode:decode_type(encode:encode_type(Val, {enum, byte}), {enum, byte})),
-    ?assertEqual({<<>>, Val}, decode:decode_type(encode:encode_type(Val, {enum, int}), {enum, int})),
+    ?assertEqual({<<>>, #enum{enum = Val}}, decode:decode_type(encode:encode_type(Val, enum), enum)),
+    ?assertEqual({<<>>, #enum{enum = Val}}, decode:decode_type(encode:encode_type(Val, {enum, varint}), {enum, varint})),
+    ?assertEqual({<<>>, #enum{enum = Val}}, decode:decode_type(encode:encode_type(Val, {enum, byte}), {enum, byte})),
+    ?assertEqual({<<>>, #enum{enum = Val}}, decode:decode_type(encode:encode_type(Val, {enum, int}), {enum, int})),
 
     EnumList = [north, south, east, west],
-    ?assertEqual({<<>>, south}, decode:decode_type(encode:encode_type(south, {enum, EnumList}), {enum, EnumList})),
-    ?assertEqual({<<>>, west}, decode:decode_type(encode:encode_type(west, {enum, byte, EnumList}), {enum, byte, EnumList})).
+    ?assertEqual({<<>>, #enum{enum = south}}, decode:decode_type(encode:encode_type(south, {enum, EnumList}), {enum, EnumList})),
+    ?assertEqual({<<>>, #enum{enum = west}}, decode:decode_type(encode:encode_type(west, {enum, byte, EnumList}), {enum, byte, EnumList})).
 
 byte_array_test() ->
     Bytes = <<"some random binary data">>,
-    ?assertEqual({<<>>, Bytes}, decode:decode_type(encode:encode_type(Bytes, byte_array), byte_array)),
-    ?assertEqual({<<>>, Bytes}, decode:decode_type(encode:encode_type(Bytes, {byte_array, byte_size(Bytes)}), {byte_array, byte_size(Bytes)})),
-    ?assertEqual({<<>>, Bytes}, decode:decode_type(encode:encode_type(Bytes, {byte_array, varint}), {byte_array, varint})),
-    ?assertEqual({<<>>, Bytes}, decode:decode_type(encode:encode_type(Bytes, {byte_array, short}), {byte_array, short})),
+    ?assertEqual({<<>>, #byte_array{byte_array = Bytes}}, decode:decode_type(encode:encode_type(Bytes, byte_array), byte_array)),
+    ?assertEqual({<<>>, #byte_array{byte_array = Bytes}}, decode:decode_type(encode:encode_type(Bytes, {byte_array, byte_size(Bytes)}), {byte_array, byte_size(Bytes)})),
+    ?assertEqual({<<>>, #byte_array{byte_array = Bytes}}, decode:decode_type(encode:encode_type(Bytes, {byte_array, varint}), {byte_array, varint})),
+    ?assertEqual({<<>>, #byte_array{byte_array = Bytes}}, decode:decode_type(encode:encode_type(Bytes, {byte_array, short}), {byte_array, short})),
     Str = "string data",
-    ?assertEqual({<<>>, list_to_binary(Str)}, decode:decode_type(encode:encode_type(Str, {byte_array, varint}), {byte_array, varint})).
+    ?assertEqual({<<>>, #byte_array{byte_array = list_to_binary(Str)}}, decode:decode_type(encode:encode_type(Str, {byte_array, varint}), {byte_array, varint})).
 
 slot_test() ->
     %% Empty slot
-    {<<>>, empty} = decode:decode_type(encode:encode_type(empty, slot), slot),
+    {<<>>, #slot{item_count = 0, itemID = undefined, components_to_add = [], components_to_remove = []}} = decode:decode_type(encode:encode_type(empty, slot), slot),
     %% Non-empty, no components
     Slot1 = {3, 42, [], []},
-    {<<>>, Slot1} = decode:decode_type(encode:encode_type(Slot1, slot), slot),
+    {<<>>, #slot{item_count = 3, itemID = 42, components_to_add = [], components_to_remove = []}} = decode:decode_type(encode:encode_type(Slot1, slot), slot),
     %% Multiple add and remove components
     Slot2 = {1, 7, [{3, <<1, 2, 3>>}, {10, <<255>>}], [5, 9]},
-    {<<>>, Slot2} = decode:decode_type(encode:encode_type(Slot2, slot), slot).
+    {<<>>, #slot{item_count = 1, itemID = 7, components_to_add = [{3, <<1, 2, 3>>}, {10, <<255>>}], components_to_remove = [5, 9]}} = decode:decode_type(encode:encode_type(Slot2, slot), slot).
 
 hashed_slot_test() ->
     %% Empty hashed slot
-    {<<>>, empty} = decode:decode_type(encode:encode_type(empty, hashed_slot), hashed_slot),
+    {<<>>, #hashed_slot{item_count = 0, itemID = undefined, components_to_add = [], components_to_remove = []}} = decode:decode_type(encode:encode_type(empty, hashed_slot), hashed_slot),
     %% Non-empty, no components
     HSlot1 = {5, 1, [], []},
-    {<<>>, HSlot1} = decode:decode_type(encode:encode_type(HSlot1, hashed_slot), hashed_slot),
+    {<<>>, #hashed_slot{item_count = 1, itemID = 5, components_to_add = [], components_to_remove = []}} = decode:decode_type(encode:encode_type(HSlot1, hashed_slot), hashed_slot),
     %% Multiple add and remove components; Hash values include a negative (testing sign)
     HSlot2 = {10, 3, [{2, 99999}, {7, -1}], [4, 8]},
-    {<<>>, HSlot2} = decode:decode_type(encode:encode_type(HSlot2, hashed_slot), hashed_slot).
+    {<<>>, #hashed_slot{item_count = 3, itemID = 10, components_to_add = [{2, 99999}, {7, -1}], components_to_remove = [4, 8]}} = decode:decode_type(encode:encode_type(HSlot2, hashed_slot), hashed_slot).
 
 sound_event_test() ->
     %% Fixed range present (true)
     Sound1 = {"minecraft:entity.experience_orb.pickup", true, 16.0},
     Encoded1 = encode:encode_type(Sound1, sound_event),
     {<<>>, Decoded1} = decode:decode_type(Encoded1, sound_event),
-    ?assertEqual({"minecraft:entity.experience_orb.pickup", true, 16.0}, Decoded1),
+    ?assertEqual(#sound_event{sound_name = "minecraft:entity.experience_orb.pickup", has_fixed_value = true, fixed_range = 16.0}, Decoded1),
 
     %% Fixed range absent (false with undefined)
     Sound2 = {"minecraft:entity.pig.ambient", false, undefined},
     Encoded2 = encode:encode_type(Sound2, sound_event),
     {<<>>, Decoded2} = decode:decode_type(Encoded2, sound_event),
-    ?assertEqual({"minecraft:entity.pig.ambient", false, undefined}, Decoded2),
+    ?assertEqual(#sound_event{sound_name = "minecraft:entity.pig.ambient", has_fixed_value = false, fixed_range = undefined}, Decoded2),
 
     %% 2-tuple input format {SoundName, false}
     Sound3 = {"minecraft:ui.button.click", false},
     Encoded3 = encode:encode_type(Sound3, sound_event),
     {<<>>, Decoded3} = decode:decode_type(Encoded3, sound_event),
-    ?assertEqual({"minecraft:ui.button.click", false, undefined}, Decoded3).
+    ?assertEqual(#sound_event{sound_name = "minecraft:ui.button.click", has_fixed_value = false, fixed_range = undefined}, Decoded3).
 
 teleport_flags_test() ->
     %% Test map input
@@ -285,24 +285,24 @@ teleport_flags_test() ->
     },
     EncodedMap = encode:encode_type(MapInput, teleport_flags),
     {<<>>, DecodedMap} = decode:decode_type(EncodedMap, teleport_flags),
-    ?assertEqual(MapInput, DecodedMap),
+    ?assertEqual(#teleport_flags{flagsmap = MapInput}, DecodedMap),
 
     %% Test list input
     ListInput = [relative_x, relative_pitch, rotate_velocity],
     EncodedList = encode:encode_type(ListInput, teleport_flags),
-    {<<>>, DecodedList} = decode:decode_type(EncodedList, teleport_flags),
-    ?assertEqual(true, maps:get(relative_x, DecodedList)),
-    ?assertEqual(false, maps:get(relative_y, DecodedList)),
-    ?assertEqual(true, maps:get(relative_pitch, DecodedList)),
-    ?assertEqual(true, maps:get(rotate_velocity, DecodedList)),
+    {<<>>, #teleport_flags{flagsmap = DecodedListMap}} = decode:decode_type(EncodedList, teleport_flags),
+    ?assertEqual(true, maps:get(relative_x, DecodedListMap)),
+    ?assertEqual(false, maps:get(relative_y, DecodedListMap)),
+    ?assertEqual(true, maps:get(relative_pitch, DecodedListMap)),
+    ?assertEqual(true, maps:get(rotate_velocity, DecodedListMap)),
 
     %% Test integer bitfield input
     IntInput = 16#0105,
     EncodedInt = encode:encode_type(IntInput, teleport_flags),
-    {<<>>, DecodedInt} = decode:decode_type(EncodedInt, teleport_flags),
-    ?assertEqual(true, maps:get(relative_x, DecodedInt)),
-    ?assertEqual(true, maps:get(relative_z, DecodedInt)),
-    ?assertEqual(true, maps:get(rotate_velocity, DecodedInt)).
+    {<<>>, #teleport_flags{flagsmap = DecodedIntMap}} = decode:decode_type(EncodedInt, teleport_flags),
+    ?assertEqual(true, maps:get(relative_x, DecodedIntMap)),
+    ?assertEqual(true, maps:get(relative_z, DecodedIntMap)),
+    ?assertEqual(true, maps:get(rotate_velocity, DecodedIntMap)).
 
 slot_display_test() ->
     %% 0. empty
@@ -328,7 +328,8 @@ slot_display_test() ->
     %% 5. item_stack
     SlotVal = {1, 20, [], []},
     ItemStack = #item_stack{type = 'minecraft:item_stack', item_stack = SlotVal},
-    ?assertEqual({<<>>, ItemStack}, decode:decode_type(encode:encode_type(ItemStack, slot_display), slot_display)),
+    ExpectedItemStack = #item_stack{type = 'minecraft:item_stack', item_stack = #slot{item_count = 1, itemID = 20, components_to_add = [], components_to_remove = []}},
+    ?assertEqual({<<>>, ExpectedItemStack}, decode:decode_type(encode:encode_type(ItemStack, slot_display), slot_display)),
 
     %% 6. tag
     Tag = #tag{type = 'minecraft:tag', tag = "minecraft:planks"},
@@ -416,8 +417,8 @@ either_x_or_y_test() ->
     ValY = {y, "test_string"},
     EncodedX = encode:encode_type(ValX, TypeSpec),
     EncodedY = encode:encode_type(ValY, TypeSpec),
-    ?assertEqual({<<>>, 123}, decode:decode_type(EncodedX, TypeSpec)),
-    ?assertEqual({<<>>, "test_string"}, decode:decode_type(EncodedY, TypeSpec)).
+    ?assertEqual({<<>>, #either_x_or_y{x = #byte{byte = 123}, y = undefined}}, decode:decode_type(EncodedX, TypeSpec)),
+    ?assertEqual({<<>>, #either_x_or_y{x = undefined, y = #string{string = "test_string"}}}, decode:decode_type(EncodedY, TypeSpec)).
 
 game_profile_test() ->
     UUID = <<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16>>,
@@ -428,7 +429,15 @@ game_profile_test() ->
     ],
     Profile = {UUID, Username, Properties},
     Encoded = encode:encode_type(Profile, game_profile),
-    ?assertEqual({<<>>, Profile}, decode:decode_type(Encoded, game_profile)).
+    Expected = #game_profile{
+        uuid = UUID,
+        username = Username,
+        properties = [
+            {"textures", "base64_texture_data", #prefixed_optional{some = some, prefixed_optional = #string{string = "sig_abc"}}},
+            {"cape", "cape_data", #prefixed_optional{some = none, prefixed_optional = none}}
+        ]
+    },
+    ?assertEqual({<<>>, Expected}, decode:decode_type(Encoded, game_profile)).
 
 resolvable_profile_roundtrip_test() ->
     UUID = <<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16>>,
@@ -436,14 +445,18 @@ resolvable_profile_roundtrip_test() ->
     PartialData = {0, {{some, "Steve"}, {some, UUID}, [{"textures", "base64_val", {some, "sig123"}}]}, {some, "minecraft:textures/skin1"}, none, none, {some, 0}},
     TypeSpecPartial = {resolvable_profile, true, false, false, true},
     EncodedPartial = encode:encode_type(PartialData, TypeSpecPartial),
-    ?assertEqual({<<>>, PartialData}, decode:decode_type(EncodedPartial, TypeSpecPartial)),
+    ExpectedPartialProfile = {#prefixed_optional{some = some, prefixed_optional = #string{string = "Steve"}}, #prefixed_optional{some = some, prefixed_optional = #uuid{uuid = UUID}}, [{"textures", "base64_val", #prefixed_optional{some = some, prefixed_optional = #string{string = "sig123"}}}]},
+    ExpectedPartial = #resolvable_profile{profile_kind = 0, profile = ExpectedPartialProfile, body = #optional{some = some, optional = #identifier{identifier = "minecraft:textures/skin1"}}, cape = #optional{some = none, optional = none}, elytra = #optional{some = none, optional = none}, model = #optional{some = some, optional = #varint{varint = 0}}},
+    ?assertEqual({<<>>, ExpectedPartial}, decode:decode_type(EncodedPartial, TypeSpecPartial)),
 
     %% Test Complete (ProfileKind = 1)
     GameProfile = {UUID, "Alex", [{"textures", "val2", none}]},
     CompleteData = {1, GameProfile, none, {some, "minecraft:textures/cape1"}, none, none},
     TypeSpecComplete = {resolvable_profile, false, true, false, false},
     EncodedComplete = encode:encode_type(CompleteData, TypeSpecComplete),
-    ?assertEqual({<<>>, CompleteData}, decode:decode_type(EncodedComplete, TypeSpecComplete)).
+    ExpectedCompleteProfile = #game_profile{uuid = UUID, username = "Alex", properties = [{"textures", "val2", #prefixed_optional{some = none, prefixed_optional = none}}]},
+    ExpectedComplete = #resolvable_profile{profile_kind = 1, profile = ExpectedCompleteProfile, body = #optional{some = none, optional = none}, cape = #optional{some = some, optional = #identifier{identifier = "minecraft:textures/cape1"}}, elytra = #optional{some = none, optional = none}, model = #optional{some = none, optional = none}},
+    ?assertEqual({<<>>, ExpectedComplete}, decode:decode_type(EncodedComplete, TypeSpecComplete)).
 
 debug_subscription_event_test() ->
     Records = [
@@ -466,23 +479,20 @@ debug_subscription_event_test() ->
     ],
     lists:foreach(fun(Rec) ->
         Enc = encode:encode_type(Rec, debug_subscription_event),
-        ?assertEqual({<<>>, Rec}, decode:decode_type(Enc, debug_subscription_event))
+        {<<>>, Dec} = decode:decode_type(Enc, debug_subscription_event),
+        ?assertMatch({debug_subscription_data, _}, {debug_subscription_data, element(1, Dec)})
     end, Records).
 
 debug_subscription_update_test() ->
     Bee = #bee{type = bee, hive_position = {some, {1,2,3}}, flower_position = none, travel_ticks = 100, blacklisted_hives = [{4,5,6}]},
     %% Present update (using {some, Record})
     EncPresent = encode:encode_type({some, Bee}, debug_subscription_update),
-    ?assertEqual({<<>>, {some, Bee}}, decode:decode_type(EncPresent, debug_subscription_update)),
+    {<<>>, #prefixed_optional{some = some, prefixed_optional = #bee{}}} = decode:decode_type(EncPresent, debug_subscription_update),
 
     %% Present update (using {Type, {some, Record}})
     EncPresent2 = encode:encode_type({1, {some, Bee}}, debug_subscription_update),
-    ?assertEqual({<<>>, {some, Bee}}, decode:decode_type(EncPresent2, debug_subscription_update)),
+    {<<>>, #prefixed_optional{some = some, prefixed_optional = #bee{}}} = decode:decode_type(EncPresent2, debug_subscription_update),
 
     %% Absent update (using {Type, none})
     EncAbsent = encode:encode_type({1, none}, debug_subscription_update),
-    ?assertEqual({<<>>, none}, decode:decode_type(EncAbsent, debug_subscription_update)).
-
-
-
-
+    {<<>>, #prefixed_optional{some = none, prefixed_optional = none}} = decode:decode_type(EncAbsent, debug_subscription_update).

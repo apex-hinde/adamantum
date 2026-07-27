@@ -128,35 +128,45 @@ encode_type(Data, Type) ->
             component_encode:encode_component(Type, Data)
     end.
 
+encode_bool(#bool{bool = B}) -> encode_bool(B);
 encode_bool(true) -> <<1:8>>;
 encode_bool(false) -> <<0:8>>;
 encode_bool(1) -> <<1:8>>;
 encode_bool(0) -> <<0:8>>.
 
+encode_byte(#byte{byte = Byte}) -> encode_byte(Byte);
 encode_byte(Byte) when is_integer(Byte) ->
     <<Byte:8/signed-integer>>.
 
+encode_ubyte(#ubyte{ubyte = UByte}) -> encode_ubyte(UByte);
 encode_ubyte(UByte) when is_integer(UByte) ->
     <<UByte:8/unsigned-integer>>.
 
+encode_short(#short{short = Short}) -> encode_short(Short);
 encode_short(Short) when is_integer(Short) ->
     <<Short:16/signed-integer>>.
 
+encode_ushort(#ushort{ushort = UShort}) -> encode_ushort(UShort);
 encode_ushort(UShort) when is_integer(UShort) ->
     <<UShort:16/unsigned-integer>>.
 
+encode_int(#int{int = Int}) -> encode_int(Int);
 encode_int(Int) when is_integer(Int) ->
     <<Int:32/signed-integer>>.
 
+encode_long(#long{long = Long}) -> encode_long(Long);
 encode_long(Long) when is_integer(Long) ->
     <<Long:64/signed-integer>>.
 
+encode_float(#float{float = Float}) -> encode_float(Float);
 encode_float(Float) when is_number(Float) ->
     <<Float:32/float>>.
 
+encode_double(#double{double = Double}) -> encode_double(Double);
 encode_double(Double) when is_number(Double) ->
     <<Double:64/float>>.
 
+encode_string(#string{string = String}) -> encode_string(String);
 encode_string(String) when is_list(String) ->
     Bin = list_to_binary(String),
     LenBin = encode_varint(byte_size(Bin)),
@@ -165,6 +175,7 @@ encode_string(String) when is_binary(String) ->
     LenBin = encode_varint(byte_size(String)),
     <<LenBin/binary, String/binary>>.
 
+encode_varint(#varint{varint = I}) -> encode_varint(I);
 encode_varint(I) when is_integer(I), I < 0 ->
     encode_varint(I band 16#FFFFFFFF);
 encode_varint(I) when is_integer(I), I >= 0, I =< 127 ->
@@ -172,6 +183,7 @@ encode_varint(I) when is_integer(I), I >= 0, I =< 127 ->
 encode_varint(I) when is_integer(I), I > 127 ->
     <<1:1, (I band 127):7, (encode_varint(I bsr 7))/binary>>.
 
+encode_varlong(#varlong{varlong = I}) -> encode_varlong(I);
 encode_varlong(I) when is_integer(I), I < 0 ->
     encode_varlong(I band 16#FFFFFFFFFFFFFFFF);
 encode_varlong(I) when is_integer(I), I >= 0, I =< 127 ->
@@ -179,43 +191,49 @@ encode_varlong(I) when is_integer(I), I >= 0, I =< 127 ->
 encode_varlong(I) when is_integer(I), I > 127 ->
     <<1:1, (I band 127):7, (encode_varlong(I bsr 7))/binary>>.
 
+encode_identifier(#identifier{identifier = String}) -> encode_identifier(String);
 encode_identifier(String) ->
     encode_string(String).
 
+encode_position(#position{x = X, y = Y, z = Z}) -> encode_position({X, Z, Y});
 encode_position({X, Z, Y}) when is_integer(X), is_integer(Z), is_integer(Y) ->
     <<X:26/signed-integer, Z:26/signed-integer, Y:12/signed-integer>>.
 
+encode_angle(#angle{angle = Angle}) -> encode_angle(Angle);
 encode_angle(Angle) when is_integer(Angle) ->
     encode_byte(Angle).
 
+encode_uuid(#uuid{uuid = UUID}) -> encode_uuid(UUID);
 encode_uuid(<<UUID:128/bitstring>>) ->
     <<UUID:128/bitstring>>;
 encode_uuid(UUID) when is_integer(UUID) ->
     <<UUID:128/unsigned-integer>>.
 
+encode_bitset(#bitset{bitset = BitSet}) -> encode_bitset(BitSet);
 encode_bitset({Length, BitSet}) when is_integer(Length), is_integer(BitSet) ->
     LenBin = encode_varint(Length),
     <<LenBin/binary, BitSet:(Length*8)/signed-integer>>;
-
 encode_bitset(BitSet) when is_integer(BitSet) ->
     Length = calc_bitset_bytes(BitSet),
     LenBin = encode_varint(Length),
     <<LenBin/binary, BitSet:(Length*8)/signed-integer>>.
 
+encode_fixed_bitset(#fixed_bitset{fixed_bitset = BitSet}) -> encode_fixed_bitset(BitSet);
 encode_fixed_bitset({Bits, BitSet}) when is_integer(Bits), is_integer(BitSet) ->
     LenBin = encode_varint(Bits),
     <<LenBin/binary, BitSet:Bits/signed-integer>>;
-
 encode_fixed_bitset(BitSet) when is_integer(BitSet) ->
     Bits = calc_fixed_bitset_bits(BitSet),
     LenBin = encode_varint(Bits),
     <<LenBin/binary, BitSet:Bits/signed-integer>>.
 
+encode_byte_array(#byte_array{byte_array = Data}) -> encode_byte_array(Data);
 encode_byte_array(Data) when is_binary(Data) ->
     Data;
 encode_byte_array(Data) when is_list(Data) ->
     list_to_binary(Data).
 
+encode_byte_array(#byte_array{byte_array = Data}, Arg) -> encode_byte_array(Data, Arg);
 encode_byte_array(Data, Length) when is_integer(Length) ->
     Bin = if is_binary(Data) -> Data; true -> list_to_binary(Data) end,
     <<ByteArray:Length/binary, _/binary>> = Bin,
@@ -260,6 +278,10 @@ calc_fixed_bitset_bits_neg(Val, Bits) ->
        true -> calc_fixed_bitset_bits_neg(Val, Bits + 8)
     end.
 
+encode_optional(#optional{some = some, optional = Value}, Type, true) ->
+    encode_type(Value, Type);
+encode_optional(#optional{some = none}, _Type, _Bool) ->
+    <<>>;
 encode_optional({some, Value}, Type, true) ->
     encode_type(Value, Type);
 encode_optional(Value, Type, true) ->
@@ -267,6 +289,10 @@ encode_optional(Value, Type, true) ->
 encode_optional(_Value, _Type, false) ->
     <<>>.
 
+encode_prefixed_optional(#prefixed_optional{some = some, prefixed_optional = Value}, InnerType) ->
+    encode_prefixed_optional({some, Value}, InnerType);
+encode_prefixed_optional(#prefixed_optional{some = none}, InnerType) ->
+    encode_prefixed_optional(none, InnerType);
 encode_prefixed_optional({some, Value}, InnerType) ->
     <<(encode_bool(true))/binary, (encode_type(Value, InnerType))/binary>>;
 encode_prefixed_optional(none, _InnerType) ->
@@ -279,6 +305,8 @@ encode_prefixed_optional(Value, InnerType) ->
 encode_id_or_x(Data) ->
     encode_id_or_x(Data, varint).
 
+encode_id_or_x(#id_or_x{id_or_x = Value}, InnerType) ->
+    encode_id_or_x(Value, InnerType);
 encode_id_or_x({id, Id}, _InnerType) when is_integer(Id), Id >= 0 ->
     encode_varint(Id + 1);
 encode_id_or_x({val, Value}, InnerType) ->
@@ -298,6 +326,8 @@ encode_id_or_x(Value, InnerType) ->
     ValBin = encode_type(Value, InnerType),
     <<IDBin/binary, ValBin/binary>>.
 
+encode_array(#array{array = List}, ElemType) ->
+    encode_array(List, ElemType);
 encode_array(List, ElemType) when is_list(List) ->
     encode_array_loop(List, ElemType, <<>>);
 encode_array(List, {Count, ElemType}) when is_list(List), is_integer(Count) ->
@@ -305,6 +335,8 @@ encode_array(List, {Count, ElemType}) when is_list(List), is_integer(Count) ->
 encode_array(List, {ElemType, Count}) when is_list(List), is_integer(Count) ->
     encode_array_loop(lists:sublist(List, Count), ElemType, <<>>).
 
+encode_array(#array{array = List}, Arg1, Arg2) ->
+    encode_array(List, Arg1, Arg2);
 encode_array(List, Count, ElemType) when is_list(List), is_integer(Count) ->
     encode_array_loop(lists:sublist(List, Count), ElemType, <<>>);
 encode_array(List, ElemType, Count) when is_list(List), is_integer(Count) ->
@@ -316,6 +348,8 @@ encode_array_loop([Head | Tail], ElemType, Acc) ->
     ElemBin = encode_type(Head, ElemType),
     encode_array_loop(Tail, ElemType, <<Acc/binary, ElemBin/binary>>).
 
+encode_prefixed_array(#prefixed_array{prefixed_array = List}, ElemType) ->
+    encode_prefixed_array(List, ElemType);
 encode_prefixed_array({prefixed_array, List}, ElemType) ->
     encode_prefixed_array(List, ElemType);
 encode_prefixed_array(List, ElemType) when is_list(List) ->
@@ -323,6 +357,8 @@ encode_prefixed_array(List, ElemType) when is_list(List) ->
     ArrayBin = encode_array_loop(List, ElemType, <<>>),
     <<LenBin/binary, ArrayBin/binary>>.
 
+encode_prefixed_array(#prefixed_array{prefixed_array = List}, PrefixType, ElemType) ->
+    encode_prefixed_array(List, PrefixType, ElemType);
 encode_prefixed_array({prefixed_array, List}, PrefixType, ElemType) ->
     encode_prefixed_array(List, PrefixType, ElemType);
 encode_prefixed_array(List, PrefixType, ElemType) when is_list(List) ->
@@ -330,9 +366,13 @@ encode_prefixed_array(List, PrefixType, ElemType) when is_list(List) ->
     ArrayBin = encode_array_loop(List, ElemType, <<>>),
     <<LenBin/binary, ArrayBin/binary>>.
 
+encode_prefixed_array_list(#prefixed_array{prefixed_array = List}, ElemList) ->
+    encode_prefixed_array_list(List, ElemList);
 encode_prefixed_array_list(Data, ElemList) ->
     encode_prefixed_array_list(Data, varint, ElemList).
 
+encode_prefixed_array_list(#prefixed_array{prefixed_array = List}, PrefixType, ElemList) ->
+    encode_prefixed_array_list(List, PrefixType, ElemList);
 encode_prefixed_array_list(List, PrefixType, ElemList) when is_list(List), is_list(ElemList) ->
     LenBin = encode_type(length(List), PrefixType),
     ItemsBin = list_to_binary([encode_tuple_elements(Item, ElemList) || Item <- List]),
@@ -343,14 +383,20 @@ encode_tuple_elements(Tuple, ElemList) when is_tuple(Tuple) ->
 encode_tuple_elements(List, ElemList) when is_list(List) ->
     list_to_binary(lists:zipwith(fun(Val, Type) -> encode_type(Val, Type) end, List, ElemList)).
 
+encode_enum(#enum{enum = Val}) ->
+    encode_enum(Val);
 encode_enum(Data) ->
     encode_enum(Data, varint).
 
+encode_enum(#enum{enum = Val}, Arg1) ->
+    encode_enum(Val, Arg1);
 encode_enum(Data, InnerType) when is_atom(InnerType) ->
     encode_type(Data, InnerType);
 encode_enum(Data, EnumList) when is_list(EnumList); is_map(EnumList) ->
     encode_enum(Data, varint, EnumList).
 
+encode_enum(#enum{enum = Val}, Arg1, Arg2) ->
+    encode_enum(Val, Arg1, Arg2);
 encode_enum(Data, InnerType, EnumList) when is_list(EnumList) ->
     case is_integer(Data) of
         true ->
@@ -395,6 +441,10 @@ find_index(Elem, [_Head | Rest], Idx) ->
 %% NOTE: DataLen + Data is NOT the real Minecraft wire format for component data
 %% (which is type-dependent). It is a local workaround until the component-type
 %% registry and individual component codecs are implemented.
+encode_slot(#slot{item_count = 0}) ->
+    encode_varint(0);
+encode_slot(#slot{item_count = ItemCount, itemID = ItemID, components_to_add = ComponentsToAdd, components_to_remove = ComponentsToRemove}) ->
+    encode_slot({ItemCount, ItemID, ComponentsToAdd, ComponentsToRemove});
 encode_slot(empty) ->
     encode_varint(0);
 encode_slot(0) ->
@@ -430,6 +480,10 @@ encode_slot_add_components([{TypeId, DataBin} | Rest], Acc) ->
 %%     ComponentsToRemove :: NRemove × TypeId::VarInt
 %%
 %% The Hash is a CRC32C checksum of the component data (currently undocumented).
+encode_hashed_slot(#hashed_slot{item_count = 0}) ->
+    encode_bool(false);
+encode_hashed_slot(#hashed_slot{item_count = ItemCount, itemID = ItemID, components_to_add = ComponentsToAdd, components_to_remove = ComponentsToRemove}) ->
+    encode_hashed_slot({ItemID, ItemCount, ComponentsToAdd, ComponentsToRemove});
 encode_hashed_slot(empty) ->
     encode_bool(false);
 encode_hashed_slot({ItemID, ItemCount, ComponentsToAdd, ComponentsToRemove}) ->
@@ -471,6 +525,8 @@ encode_json_text_component(Data) ->
     JsonBin = iolist_to_binary(json:encode(Data)),
     encode_string(JsonBin).
 
+encode_id_set(#id_set{id_set = Data}) ->
+    encode_id_set(Data);
 encode_id_set(Data) ->
     case Data of
         {tag, TagName} ->
@@ -501,6 +557,10 @@ encode_id_set(Data) ->
 is_tag_name(List) ->
     lists:any(fun(C) -> (C >= $a andalso C =< $z) orelse C == $: orelse C == $/ end, List).
 
+encode_sound_event(#sound_event{sound_name = SoundName, has_fixed_value = true, fixed_range = FixedRange}) ->
+    encode_sound_event({SoundName, true, FixedRange});
+encode_sound_event(#sound_event{sound_name = SoundName, has_fixed_value = false, fixed_range = FixedRange}) ->
+    encode_sound_event({SoundName, false, FixedRange});
 encode_sound_event({SoundName, true, FixedRange}) ->
     SoundBin = encode_string(SoundName),
     BoolBin = encode_bool(true),
@@ -515,6 +575,8 @@ encode_sound_event({SoundName, false}) ->
     BoolBin = encode_bool(false),
     <<SoundBin/binary, BoolBin/binary>>.
 
+encode_teleport_flags(#teleport_flags{flagsmap = FlagsMap}) ->
+    encode_teleport_flags(FlagsMap);
 encode_teleport_flags(Int) when is_integer(Int) ->
     encode_int(Int);
 encode_teleport_flags(Map) when is_map(Map) ->
@@ -529,7 +591,6 @@ encode_teleport_flags(Map) when is_map(Map) ->
     BitRot = case maps:get(rotate_velocity, Map, false) of true -> 16#0100; false -> 0 end,
     Int = BitX bor BitY bor BitZ bor BitYaw bor BitPitch bor BitVelX bor BitVelY bor BitVelZ bor BitRot,
     encode_int(Int);
-
 encode_teleport_flags(FlagsList) when is_list(FlagsList) ->
     Int = lists:foldl(fun(Flag, Acc) ->
         Mask = case Flag of
@@ -879,6 +940,8 @@ encode_debug_subscription_data({Event, X, Y, Z}, 15) ->
     ZBin = encode_double(Z),
     <<EventBin/binary, XBin/binary, YBin/binary, ZBin/binary>>.
 
+encode_debug_path_node(#debug_path_node{x = X, y = Y, z = Z, walk_cost = WalkCost, penalty = Penalty, open = Open, type = Type, heap_index = HeapIndex}) ->
+    encode_debug_path_node({X, Y, Z, WalkCost, Penalty, Open, Type, HeapIndex});
 encode_debug_path_node({X, Y, Z, WalkCost, Penalty, Open, Type, HeapIndex}) ->
     XBin = encode_int(X),
     YBin = encode_int(Y),
@@ -890,6 +953,8 @@ encode_debug_path_node({X, Y, Z, WalkCost, Penalty, Open, Type, HeapIndex}) ->
     HeapBin = encode_int(HeapIndex),
     <<XBin/binary, YBin/binary, ZBin/binary, WalkBin/binary, PenBin/binary, OpenBin/binary, TypeBin/binary, HeapBin/binary>>.
 
+encode_debug_structure_info(#debug_structure_info{min_x = MinX, min_y = MinY, min_z = MinZ, max_x = MaxX, max_y = MaxY, max_z = MaxZ, pieces = Pieces}) ->
+    encode_debug_structure_info({{MinX, MinY, MinZ, MaxX, MaxY, MaxZ}, Pieces});
 encode_debug_structure_info({{MinX, MinY, MinZ, MaxX, MaxY, MaxZ}, Pieces}) ->
     MinXBin = encode_int(MinX),
     MinYBin = encode_int(MinY),
@@ -900,6 +965,8 @@ encode_debug_structure_info({{MinX, MinY, MinZ, MaxX, MaxY, MaxZ}, Pieces}) ->
     PiecesBin = encode_prefixed_array(Pieces, debug_structure_piece),
     <<MinXBin/binary, MinYBin/binary, MinZBin/binary, MaxXBin/binary, MaxYBin/binary, MaxZBin/binary, PiecesBin/binary>>.
 
+encode_debug_structure_piece(#debug_structure_piece{min_x = MinX, min_y = MinY, min_z = MinZ, max_x = MaxX, max_y = MaxY, max_z = MaxZ, is_start = IsStart}) ->
+    encode_debug_structure_piece({{MinX, MinY, MinZ, MaxX, MaxY, MaxZ}, IsStart});
 encode_debug_structure_piece({{MinX, MinY, MinZ, MaxX, MaxY, MaxZ}, IsStart}) ->
     MinXBin = encode_int(MinX),
     MinYBin = encode_int(MinY),

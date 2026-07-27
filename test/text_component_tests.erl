@@ -1,5 +1,6 @@
 -module(text_component_tests).
 -include_lib("eunit/include/eunit.hrl").
+-include("src/data_types/records.hrl").
 
 string_shorthand_test() ->
     SNBT = <<"\"Hello world\"">>,
@@ -118,7 +119,7 @@ decode_type_integration_test() ->
     %% Length prefixed string format in decode_type
     LenBin = encode:encode_type(byte_size(SNBTBin), varint),
     InputBin = <<LenBin/binary, SNBTBin/binary, "rest">>,
-    {Rest, Comp} = decode:decode_type(InputBin, text_component),
+    {Rest, #text_component{component_map = Comp}} = decode:decode_type(InputBin, text_component),
     ?assertEqual(<<"rest">>, Rest),
     ?assertEqual(<<"text">>, maps:get(type, Comp)),
     ?assertEqual(<<"Integration">>, maps:get(text, Comp)).
@@ -127,7 +128,7 @@ encode_type_integration_test() ->
     CompMap = #{type => <<"text">>, text => <<"Encoded">>},
     EncBin = encode:encode_type(CompMap, text_component),
     ?assert(is_binary(EncBin)),
-    {Rest, DecodedComp} = decode:decode_type(EncBin, text_component),
+    {Rest, #text_component{component_map = DecodedComp}} = decode:decode_type(EncBin, text_component),
     ?assertEqual(<<>>, Rest),
     ?assertEqual(<<"text">>, maps:get(type, DecodedComp)),
     ?assertEqual(<<"Encoded">>, maps:get(text, DecodedComp)).

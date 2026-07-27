@@ -170,7 +170,7 @@ text_component_test() ->
     Comp = #{type => <<"text">>, text => <<"Hello">>},
     EncBin = encode:encode_type(Comp, text_component),
     ?assert(is_binary(EncBin)),
-    {Rest, DecodedComp} = decode:decode_type(EncBin, text_component),
+    {Rest, #text_component{component_map = DecodedComp}} = decode:decode_type(EncBin, text_component),
     ?assertEqual(<<>>, Rest),
     ?assertEqual(<<"text">>, maps:get(type, DecodedComp)),
     ?assertEqual(<<"Hello">>, maps:get(text, DecodedComp)).
