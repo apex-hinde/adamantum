@@ -461,26 +461,30 @@ resolvable_profile_roundtrip_test() ->
 debug_subscription_event_test() ->
     Records = [
         #dedicated_server_tick_time{type = dedicated_server_tick_time},
-        #bee{type = bee, hive_position = {some, {1,2,3}}, flower_position = none, travel_ticks = 100, blacklisted_hives = [{4,5,6}]},
-        #villager_brain{type = villager_brain, name = "villager", profession = "farmer", xp = 10, health = 20.0, max_health = 20.0, inventory = "", wants_golem = false, anger_level = 0, activities = ["work"], behaviors = [], memories = [], gossips = [], pois = [{1,2,3}], potential_pois = []},
-        #breeze{type = breeze, attack_target = {some, 5}, jump_target = none},
+        #bee{type = bee, hive_position = #prefixed_optional{some = some, prefixed_optional = #position{x=1,y=2,z=3}}, flower_position = #prefixed_optional{some = none, prefixed_optional = none}, travel_ticks = 100, blacklisted_hives = [#position{x=4,y=5,z=6}]},
+        #villager_brain{type = villager_brain, name = "villager", profession = "farmer", xp = 10, health = 20.0, max_health = 20.0, inventory = "", wants_golem = false, anger_level = 0, activities = ["work"], behaviors = [], memories = [], gossips = [], pois = [#position{x=1,y=2,z=3}], potential_pois = []},
+        #breeze{type = breeze, attack_target = #prefixed_optional{some = some, prefixed_optional = 5}, jump_target = #prefixed_optional{some = none, prefixed_optional = none}},
         #goal_selector{type = goal_selector, priority = 1, is_running = true, name = "swim"},
-        #entity_path{type = entity_path, reached = true, next_block_index = 10, block_position = {10,20,30}, nodes = [{1,2,3, 1.0, 0.5, true, 0, 1}], target_nodes = [], open_set = [], closed_set = [], max_node_distance = 2.5},
+        #entity_path{type = entity_path, reached = true, next_block_index = 10, block_position = #position{x=10,y=20,z=30}, nodes = [{1,2,3, 1.0, 0.5, true, 0, 1}], target_nodes = [], open_set = [], closed_set = [], max_node_distance = 2.5},
         #entity_block_intersection{type = entity_block_intersection, id = 2},
         #bee_hive{type = bee_hive, hive_type = 5, occupant_count = 3, honey_level = 4, sedated = true},
-        #poi{type = poi, position = {10,20,30}, poi_type = 1, free_ticket_count = 2},
+        #poi{type = poi, position = #position{x=10,y=20,z=30}, poi_type = 1, free_ticket_count = 2},
         #redstone_wire_orientation{type = redstone_wire_orientation, id = 42},
         #village_section{type = village_section},
-        #raid{type = raid, positions = [{1,1,1}, {2,2,2}]},
+        #raid{type = raid, positions = [#position{x=1,y=1,z=1}, #position{x=2,y=2,z=2}]},
         #structure{type = structure, structures = [{{0,0,0,20,20,20}, [{{0,0,0,10,10,10}, true}]}]},
         #game_event_listener{type = game_event_listener, listener_radius = 8},
-        #neighbor_update{type = neighbor_update, position = {7,8,9}},
+        #neighbor_update{type = neighbor_update, position = #position{x=7,y=8,z=9}},
         #game_event{type = game_event, event = 3, x = 1.5, y = 2.5, z = 3.5}
     ],
     lists:foreach(fun(Rec) ->
         Enc = encode:encode_type(Rec, debug_subscription_event),
         {<<>>, Dec} = decode:decode_type(Enc, debug_subscription_event),
-        ?assertMatch({debug_subscription_data, _}, {debug_subscription_data, element(1, Dec)})
+        ?assertMatch(#debug_subscription_event{}, Dec),
+
+        Enc2 = encode:encode_type(Dec, debug_subscription_event),
+        {<<>>, Dec2} = decode:decode_type(Enc2, debug_subscription_event),
+        ?assertEqual(Dec, Dec2)
     end, Records).
 
 debug_subscription_update_test() ->

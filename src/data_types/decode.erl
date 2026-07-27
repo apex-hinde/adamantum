@@ -307,9 +307,7 @@ decode_prefixed_array(Data, PrefixType, ElemType) ->
     {RestData2, #array{array = Array}} = decode_array(RestData, Count, ElemType),
     {RestData2, #prefixed_array{prefixed_array = Array}}.
 
-decode_array_list(Data, Count, ElemList) when is_integer(Count), Count >= 0 ->
-    decode_array_loop_list(Data, Count, ElemList, []);
-decode_array_list(Data, ElemList, Count) when is_integer(Count), Count >= 0 ->
+decode_array_list(Data, Count, ElemList) when is_integer(Count), Count >= 0, is_list(ElemList) ->
     decode_array_loop_list(Data, Count, ElemList, []).
 
 decode_array_loop_list(Data, 0, _ElemList, Acc) ->
@@ -328,10 +326,6 @@ decode_array_loop_list(Data, Count, ElemList, Acc) ->
 decode_prefixed_array_list(Data, ElemList) ->
     decode_prefixed_array_list(Data, varint, ElemList).
 
-decode_prefixed_array_list(Data, varint, ElemList) ->
-    {RestData, #varint{varint = Count}} = decode_varint(Data),
-    {RestData2, #array{array = Array}} = decode_array_list(RestData, Count, ElemList),
-    {RestData2, #prefixed_array{prefixed_array = Array}};
 decode_prefixed_array_list(Data, PrefixType, ElemList) ->
     {RestData, PrefixRec} = decode_type(Data, PrefixType),
     Count = extract_value(PrefixRec),
@@ -688,7 +682,8 @@ decode_debug_subscription_update(Data) ->
 decode_debug_subscription_event(Data) ->
     {Data2, EnumRec} = decode_enum(Data),
     Type = extract_value(EnumRec),
-    debug_subscription_data(Data2, Type).
+    {Data3, SubData} = debug_subscription_data(Data2, Type),
+    {Data3, #debug_subscription_event{debug_subscription_type = Type, data = SubData}}.
 
 debug_subscription_data(Data, Type) ->
     case Type of

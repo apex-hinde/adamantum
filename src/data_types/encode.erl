@@ -201,13 +201,17 @@ encode_position({X, Z, Y}) when is_integer(X), is_integer(Z), is_integer(Y) ->
 
 encode_angle(#angle{angle = Angle}) -> encode_angle(Angle);
 encode_angle(Angle) when is_integer(Angle) ->
-    encode_byte(Angle).
+    encode_byte(Angle);
+encode_angle(Angle) when is_float(Angle) ->
+    encode_byte(trunc(Angle)).
 
 encode_uuid(#uuid{uuid = UUID}) -> encode_uuid(UUID);
 encode_uuid(<<UUID:128/bitstring>>) ->
     <<UUID:128/bitstring>>;
 encode_uuid(UUID) when is_integer(UUID) ->
-    <<UUID:128/unsigned-integer>>.
+    <<UUID:128/unsigned-integer>>;
+encode_uuid(UUID) when is_list(UUID) ->
+    list_to_binary(UUID).
 
 encode_bitset(#bitset{bitset = BitSet}) -> encode_bitset(BitSet);
 encode_bitset({Length, BitSet}) when is_integer(Length), is_integer(BitSet) ->
@@ -350,16 +354,12 @@ encode_array_loop([Head | Tail], ElemType, Acc) ->
 
 encode_prefixed_array(#prefixed_array{prefixed_array = List}, ElemType) ->
     encode_prefixed_array(List, ElemType);
-encode_prefixed_array({prefixed_array, List}, ElemType) ->
-    encode_prefixed_array(List, ElemType);
 encode_prefixed_array(List, ElemType) when is_list(List) ->
     LenBin = encode_varint(length(List)),
     ArrayBin = encode_array_loop(List, ElemType, <<>>),
     <<LenBin/binary, ArrayBin/binary>>.
 
 encode_prefixed_array(#prefixed_array{prefixed_array = List}, PrefixType, ElemType) ->
-    encode_prefixed_array(List, PrefixType, ElemType);
-encode_prefixed_array({prefixed_array, List}, PrefixType, ElemType) ->
     encode_prefixed_array(List, PrefixType, ElemType);
 encode_prefixed_array(List, PrefixType, ElemType) when is_list(List) ->
     LenBin = encode_type(length(List), PrefixType),
@@ -717,6 +717,8 @@ encode_either_x_or_y({y, Value}, _TypeX, TypeY) ->
 encode_either_x_or_y({false, Value}, _TypeX, TypeY) ->
     <<(encode_bool(false))/binary, (encode_type(Value, TypeY))/binary>>.
 
+encode_game_profile(#game_profile{uuid = UUID, username = Username, properties = Properties}) ->
+    encode_game_profile({UUID, Username, Properties});
 encode_game_profile({UUID, Username, Properties}) ->
     UUIDBin = encode_uuid(UUID),
     UsernameBin = encode_string(Username),
@@ -778,6 +780,15 @@ pack_resolvable_profile(0, {Username, UUID, Properties}) ->
 pack_resolvable_profile(1, GameProfile) ->
     encode_game_profile(GameProfile).
 
+encode_debug_subscription_event(#debug_subscription_event{debug_subscription_type = Type, data = Data}) when is_integer(Type) ->
+    TypeBin = encode_enum(Type),
+    DataBin = encode_debug_subscription_data(Data, Type),
+    <<TypeBin/binary, DataBin/binary>>;
+encode_debug_subscription_event(#debug_subscription_event{data = Data}) ->
+    Type = debug_subscription_type_id(Data),
+    TypeBin = encode_enum(Type),
+    DataBin = encode_debug_subscription_data(Data, Type),
+    <<TypeBin/binary, DataBin/binary>>;
 encode_debug_subscription_event({Type, Data}) when is_integer(Type) ->
     TypeBin = encode_enum(Type),
     DataBin = encode_debug_subscription_data(Data, Type),
@@ -993,6 +1004,8 @@ debug_subscription_type_id(12) -> 12;
 debug_subscription_type_id(13) -> 13;
 debug_subscription_type_id(14) -> 14;
 debug_subscription_type_id(15) -> 15;
+debug_subscription_type_id(#debug_subscription_event{debug_subscription_type = Type}) when is_integer(Type) -> Type;
+debug_subscription_type_id(#debug_subscription_event{data = Data}) -> debug_subscription_type_id(Data);
 debug_subscription_type_id(#dedicated_server_tick_time{}) -> 0;
 debug_subscription_type_id(#bee{}) -> 1;
 debug_subscription_type_id(#villager_brain{}) -> 2;
