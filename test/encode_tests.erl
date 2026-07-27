@@ -1,6 +1,7 @@
 -module(encode_tests).
 -include_lib("eunit/include/eunit.hrl").
 -include("src/data_types/records.hrl").
+-include("src/data_types/components/component_records.hrl").
 
 
 bool_test() ->
@@ -147,13 +148,25 @@ slot_test() ->
     %% Empty slot: just VarInt(0)
     ?assertEqual(<<0>>, encode:encode_type(empty, slot)),
     ?assertEqual(<<0>>, encode:encode_type(0, slot)),
+    ?assertEqual(<<0>>, encode:encode_type(#slot{item_count = 0}, slot)),
     %% Non-empty, no components: ItemCount=1, ItemID=5, NAdd=0, NRemove=0
     ?assertEqual(<<1, 5, 0, 0>>, encode:encode_type({1, 5, [], []}, slot)),
-    %% With one add-component {TypeId=3, Data=<<1,2>>} and one remove TypeId=7:
-    %% ItemCount=2, ItemID=10, NAdd=1, NRemove=1,
-    %% add: TypeId=3, DataLen=2, Data=<<1,2>>, remove: TypeId=7
-    ?assertEqual(<<2, 10, 1, 1, 3, 2, 1, 2, 7>>,
-                 encode:encode_type({2, 10, [{3, <<1, 2>>}], [7]}, slot)).
+    ?assertEqual(<<1, 5, 0, 0>>, encode:encode_type(#slot{item_count = 1, itemID = 5, components_to_add = [], components_to_remove = []}, slot)),
+    %% With add component using record: TypeId=3 (damage=2), remove TypeId=7
+    ?assertEqual(<<2, 10, 1, 1, 3, 2, 7>>,
+                 encode:encode_type({2, 10, [{3, #damage{type = 'minecraft:damage', damage = 2}}], [7]}, slot)),
+    ?assertEqual(<<2, 10, 1, 1, 3, 2, 7>>,
+                 encode:encode_type(#slot{item_count = 2, itemID = 10,
+                                         components_to_add = [{3, #damage{type = 'minecraft:damage', damage = 2}}],
+                                         components_to_remove = [7]}, slot)),
+    %% With multiple add components (max_stack_size=64 and unbreakable) and multiple remove components
+    ?assertEqual(<<5, 20, 2, 2, 1, 64, 4, 2, 5>>,
+                 encode:encode_type(#slot{item_count = 5, itemID = 20,
+                                         components_to_add = [
+                                             {1, #max_stack_size{type = 'minecraft:max_stack_size', max_stack_size = 64}},
+                                             {4, #unbreakable{type = 'minecraft:unbreakable'}}
+                                         ],
+                                         components_to_remove = [2, 5]}, slot)).
 
 hashed_slot_test() ->
     %% Empty hashed slot: Boolean false

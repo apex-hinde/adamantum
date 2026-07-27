@@ -1,6 +1,7 @@
 -module(decode_tests).
 -include_lib("eunit/include/eunit.hrl").
 -include("src/data_types/records.hrl").
+-include("src/data_types/components/component_records.hrl").
 
 bool_test() ->
     ?assertEqual({<<>>, #bool{bool = true}}, decode:decode_type(<<1>>, bool)),
@@ -172,10 +173,21 @@ slot_test() ->
     %% Non-empty, no components
     ?assertEqual({<<>>, #slot{item_count = 1, itemID = 5, components_to_add = [], components_to_remove = []}},
                  decode:decode_type(<<1, 5, 0, 0>>, slot)),
-    %% With one add {TypeId=3, Data=<<1,2>>} and one remove TypeId=7
-    Input = <<2, 10, 1, 1, 3, 2, 1, 2, 7>>,
-    ?assertEqual({<<>>, #slot{item_count = 2, itemID = 10, components_to_add = [{3, <<1, 2>>}], components_to_remove = [7]}},
-                 decode:decode_type(Input, slot)).
+    %% With one add component (TypeId=3 minecraft:damage with damage=2) and one remove TypeId=7
+    Input1 = <<2, 10, 1, 1, 3, 2, 7>>,
+    Expected1 = #slot{item_count = 2, itemID = 10,
+                      components_to_add = [{3, #damage{type = 'minecraft:damage', damage = 2}}],
+                      components_to_remove = [7]},
+    ?assertEqual({<<>>, Expected1}, decode:decode_type(Input1, slot)),
+    %% Multiple add components (max_stack_size and unbreakable) and multiple remove components, with trailing rest data
+    Input2 = <<5, 20, 2, 2, 1, 64, 4, 2, 5, "rest">>,
+    Expected2 = #slot{item_count = 5, itemID = 20,
+                      components_to_add = [
+                          {1, #max_stack_size{type = 'minecraft:max_stack_size', max_stack_size = 64}},
+                          {4, #unbreakable{type = 'minecraft:unbreakable'}}
+                      ],
+                      components_to_remove = [2, 5]},
+    ?assertEqual({<<"rest">>, Expected2}, decode:decode_type(Input2, slot)).
 
 hashed_slot_test() ->
     %% Empty hashed slot

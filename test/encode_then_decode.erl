@@ -1,6 +1,7 @@
 -module(encode_then_decode).
 -include_lib("eunit/include/eunit.hrl").
 -include("src/data_types/records.hrl").
+-include("src/data_types/components/component_records.hrl").
 
 
 bool_test() ->
@@ -234,12 +235,22 @@ byte_array_test() ->
 slot_test() ->
     %% Empty slot
     {<<>>, #slot{item_count = 0, itemID = undefined, components_to_add = [], components_to_remove = []}} = decode:decode_type(encode:encode_type(empty, slot), slot),
+    {<<>>, #slot{item_count = 0, itemID = undefined, components_to_add = [], components_to_remove = []}} = decode:decode_type(encode:encode_type(#slot{item_count = 0}, slot), slot),
     %% Non-empty, no components
     Slot1 = {3, 42, [], []},
     {<<>>, #slot{item_count = 3, itemID = 42, components_to_add = [], components_to_remove = []}} = decode:decode_type(encode:encode_type(Slot1, slot), slot),
-    %% Multiple add and remove components
-    Slot2 = {1, 7, [{3, <<1, 2, 3>>}, {10, <<255>>}], [5, 9]},
-    {<<>>, #slot{item_count = 1, itemID = 7, components_to_add = [{3, <<1, 2, 3>>}, {10, <<255>>}], components_to_remove = [5, 9]}} = decode:decode_type(encode:encode_type(Slot2, slot), slot).
+    %% Multiple add and remove components using records
+    AddComps = [
+        {3, #damage{type = 'minecraft:damage', damage = 15}},
+        {4, #unbreakable{type = 'minecraft:unbreakable'}},
+        {1, #max_stack_size{type = 'minecraft:max_stack_size', max_stack_size = 16}}
+    ],
+    RemoveComps = [5, 9],
+    Slot2 = #slot{item_count = 1, itemID = 7, components_to_add = AddComps, components_to_remove = RemoveComps},
+    {<<>>, Slot2} = decode:decode_type(encode:encode_type(Slot2, slot), slot),
+    %% Tuple form input
+    Slot3 = {1, 7, AddComps, RemoveComps},
+    {<<>>, Slot2} = decode:decode_type(encode:encode_type(Slot3, slot), slot).
 
 hashed_slot_test() ->
     %% Empty hashed slot

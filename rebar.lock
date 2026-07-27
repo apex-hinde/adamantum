@@ -5,5 +5,5 @@
   0},
  {<<"nbtea">>,
   {git,"https://github.com/apex-hinde/nbtea",
-       {ref,"d21a88e024817a7f1876c3c951377e34c2fc33c4"}},
+       {ref,"f265adc1caa5ebb9565c1de2ff1288c678889838"}},
   0}].

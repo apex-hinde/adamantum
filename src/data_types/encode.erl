@@ -45,7 +45,7 @@ encode_type(Data, Type) ->
         hashed_slot ->
             encode_hashed_slot(Data);
         nbt ->
-            nbt:encode(Data);
+            encode_nbt(Data);
         position ->
             encode_position(Data);
         angle ->
@@ -461,11 +461,14 @@ encode_slot({ItemCount, ItemID, ComponentsToAdd, ComponentsToRemove}) ->
       AddBin/binary, RemoveBin/binary>>.
 
 encode_slot_add_components([], Acc) -> Acc;
-encode_slot_add_components([{TypeId, DataBin} | Rest], Acc) ->
-    TypeIdBin  = encode_varint(TypeId),
-    DataLenBin = encode_varint(byte_size(DataBin)),
-    encode_slot_add_components(Rest,
-			       <<Acc/binary, TypeIdBin/binary, DataLenBin/binary, DataBin/binary>>).
+encode_slot_add_components([{TypeId, ComponentData} | Rest], Acc) ->
+    TypeIdBin = encode_varint(TypeId),
+    CompBin   = case is_binary(ComponentData) of
+                    true -> ComponentData;
+                    false -> component_encode:encode_component(TypeId, ComponentData)
+                end,
+    encode_slot_add_components(Rest, <<Acc/binary, TypeIdBin/binary, CompBin/binary>>).
+
 
 %% Hashed Slot
 %%
@@ -1039,6 +1042,11 @@ debug_subscription_type_id(game_event_listener) -> 13;
 debug_subscription_type_id(neighbor_update) -> 14;
 debug_subscription_type_id(game_event) -> 15;
 debug_subscription_type_id(#{type := Type}) -> debug_subscription_type_id(Type).
+
+encode_nbt(#nbt{nbt = NbtVal}) ->
+    nbt:encode(NbtVal);
+encode_nbt(Data) ->
+    nbt:encode(Data).
 
 
 

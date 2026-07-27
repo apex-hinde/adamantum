@@ -41,7 +41,7 @@ decode_type(Data, Type) ->
         hashed_slot ->
             decode_hashed_slot(Data);
         nbt ->
-            {<<>>, #nbt{nbt = nbt:decode(Data)}};
+            decode_nbt(Data);
 	    position ->
             decode_position(Data);
         angle ->
@@ -128,6 +128,12 @@ extract_value(#varlong{varlong = V}) -> V;
 extract_value(#enum{enum = V}) -> extract_value(V);
 extract_value(V) when not is_tuple(V) -> V;
 extract_value(V) -> V.
+
+decode_nbt(Data) ->
+    case nbt:decode(Data) of
+        {Data2, Map} -> {Data2, #nbt{nbt = Map}};
+        Map when is_list(Map) -> {<<>>, #nbt{nbt = Map}}
+    end.
 
 decode_bool(Data) ->
     <<Bool:8, Data2/binary>> = Data,
@@ -315,7 +321,10 @@ decode_array_loop_list(Data, 0, _ElemList, Acc) ->
 decode_array_loop_list(Data, Count, ElemList, Acc) ->
     {DecodedFields, RestData} = lists:mapfoldl(
         fun(ElemType, AccData) ->
+            io:format("elem type~p~n", [ElemType]),
             {NewData, Elem} = decode_type(AccData, ElemType),
+            io:format("new data~p~n", [NewData]),
+
             {Elem, NewData}
         end,
         Data,
@@ -395,10 +404,10 @@ decode_slot(Data) ->
 decode_slot_add_components(Data, 0, Acc) ->
     {Data, lists:reverse(Acc)};
 decode_slot_add_components(Data, N, Acc) ->
-    {Rest1, #varint{varint = TypeId}}  = decode_varint(Data),
-    {Rest2, #varint{varint = DataLen}} = decode_varint(Rest1),
-    <<DataBin:DataLen/binary, Rest3/binary>> = Rest2,
-    decode_slot_add_components(Rest3, N - 1, [{TypeId, DataBin} | Acc]).
+    {Rest1, #varint{varint = TypeId}} = decode_varint(Data),
+    {Rest2, ComponentData} = component_decode:decode_component(TypeId, Rest1),
+    decode_slot_add_components(Rest2, N - 1, [{TypeId, ComponentData} | Acc]).
+
 
 decode_slot_remove_components(Data, 0, Acc) ->
     {Data, lists:reverse(Acc)};
