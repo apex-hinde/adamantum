@@ -17,6 +17,10 @@ get_messages_serverbound(Id) ->
         'minecraft:cookie_response' ->
             {'minecraft:cookie_response', [identifier, {prefixed_optional, {prefixed_array, byte}}]};
 
+        %% Status State
+        'minecraft:status_request' ->
+            {'minecraft:status_request', []};
+        
         %%Configuration State
         'minecraft:client_information' ->
             {'minecraft:client_information', [string, byte, {enum, varint}, bool, ubyte, bool, bool, {enum, varint}]};
@@ -183,6 +187,9 @@ get_messages_clientbound(Id) ->
             {'minecraft:custom_query', [varint, identifier, nothing]};
         'minecraft:cookie_request' ->
             {'minecraft:cookie_request', [identifier]};
+        %% Status State
+        'minecraft:status_response' ->
+            {'minecraft:status_response', [string]};
         %% Configuration State
         'minecraft:custom_payload' ->
             {'minecraft:custom_payload', [identifier, nothing]};
