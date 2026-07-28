@@ -29,10 +29,7 @@ init([]) ->
     {ok, {{one_for_all, 0, 1},[
 			       {listen,
 				{listen, start_link, [listen, {25565}]},
-				permanent, brutal_kill, worker, [listen]},
-			       {player_manager,
-				{player_manager, start_link, []},
-				permanent, brutal_kill, worker, [player_manager]}
+				permanent, brutal_kill, worker, [listen]}
 			      ]}}.
 
 %% internal functions

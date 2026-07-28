@@ -7,7 +7,7 @@
 	 to_snbt/1,
 	 from_snbt/1
 	]).
-
+-include("src/data_types/records.hrl").
 
 -spec decode(term()) -> map().
 decode(Data) when is_binary(Data); is_list(Data) ->
@@ -31,11 +31,16 @@ from_snbt(SNBT) ->
     normalize(Tags).
 
 -spec to_snbt(term()) -> binary().
+to_snbt(#text_component{component_map = Map}) ->
+    to_snbt(Map);
 to_snbt(Map) when is_map(Map) ->
     NbtTags = to_nbt_tags(Map),
     snbt:encode(NbtTags);
 to_snbt(Tags) when is_list(Tags) ->
-    snbt:encode(Tags);
+    case is_string_or_binary(Tags) of
+        true -> list_to_binary(Tags);
+        false -> snbt:encode(Tags)
+    end;
 to_snbt(Str) when is_binary(Str) ->
     Str.
 

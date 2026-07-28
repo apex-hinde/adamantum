@@ -2,7 +2,20 @@
 -include("src/data_types/records.hrl").
 
 -export([
-	 encode_type/2
+	 encode_type/2,
+	 encode_node/1,
+	 encode_boss_bar/1,
+	 encode_seen_advancements/1,
+	 encode_delete_chat/1,
+	 encode_chat_type/1,
+	 encode_player_info_update/1,
+	 encode_set_equipment/1,
+	 encode_set_objective/1,
+	 encode_set_player_team/1,
+	 encode_waypoint_data/1,
+	 encode_stop_sound/1,
+	 encode_set_score/1,
+	 encode_update_advancements/1
 	]).
 
 
@@ -122,6 +135,40 @@ encode_type(Data, Type) ->
             encode_debug_structure_info(Data);
         debug_structure_piece ->
             encode_debug_structure_piece(Data);
+        lp_vec3 ->
+            encode_lp_vec3(Data);
+        node ->
+            encode_node(Data);
+        boss_bar ->
+            encode_boss_bar(Data);
+        seen_advancements ->
+            encode_seen_advancements(Data);
+        delete_chat ->
+            encode_delete_chat(Data);
+        chat_type ->
+            encode_chat_type(Data);
+        player_info_update ->
+            encode_player_info_update(Data);
+        set_equipment ->
+            encode_set_equipment(Data);
+        set_objective ->
+            encode_set_objective(Data);
+        set_player_team ->
+            encode_set_player_team(Data);
+        waypoint_data ->
+            encode_waypoint_data(Data);
+        stop_sound ->
+            encode_stop_sound(Data);
+        set_score ->
+            encode_set_score(Data);
+        update_advancements ->
+            encode_update_advancements(Data);
+        advancement ->
+            encode_type_advancement(Data);
+        advancement_progress ->
+            encode_type_advancement_progress(Data);
+        Types when is_list(Types) ->
+            encode_tuple_elements(Data, Types);
 
         %% Component Data Types
         _ ->
@@ -354,6 +401,9 @@ encode_array_loop([Head | Tail], ElemType, Acc) ->
 
 encode_prefixed_array(#prefixed_array{prefixed_array = List}, ElemType) ->
     encode_prefixed_array(List, ElemType);
+encode_prefixed_array(#array{array = List}, ElemType) ->
+    encode_prefixed_array(List, ElemType);
+
 encode_prefixed_array(List, ElemType) when is_list(List) ->
     LenBin = encode_varint(length(List)),
     ArrayBin = encode_array_loop(List, ElemType, <<>>),
@@ -507,10 +557,24 @@ encode_hashed_slot_add_components([{TypeId, Hash} | Rest], Acc) ->
     encode_hashed_slot_add_components(Rest,
 				      <<Acc/binary, TypeIdBin/binary, HashBin/binary>>).
 
+encode_text_component(#text_component{component_map = Map}) ->
+    encode_text_component(Map);
+encode_text_component(Data) when is_binary(Data) ->
+    encode_string(Data);
+encode_text_component(Data) when is_list(Data) ->
+    case io_lib:printable_unicode_list(Data) of
+        true ->
+            encode_string(Data);
+        false ->
+            SNBTBin = text_component:to_snbt(Data),
+            encode_string(SNBTBin)
+    end;
 encode_text_component(Data) ->
     SNBTBin = text_component:to_snbt(Data),
     encode_string(SNBTBin).
 
+encode_json_text_component(#json_text_component{json_component_map = Map}) ->
+    encode_json_text_component(Map);
 encode_json_text_component(Data) when is_map(Data) ->
     JsonBin = iolist_to_binary(json:encode(Data)),
     encode_string(JsonBin);
@@ -1048,8 +1112,803 @@ encode_nbt(#nbt{nbt = NbtVal}) ->
 encode_nbt(Data) ->
     nbt:encode(Data).
 
+extract_val(#varint{varint = V}) -> extract_val(V);
+extract_val(#varlong{varlong = V}) -> extract_val(V);
+extract_val(#enum{enum = V}) -> extract_val(V);
+extract_val(#optional{optional = V}) -> extract_val(V);
+extract_val(#byte{byte = V}) -> extract_val(V);
+extract_val(#ubyte{ubyte = V}) -> extract_val(V);
+extract_val(#short{short = V}) -> extract_val(V);
+extract_val(#ushort{ushort = V}) -> extract_val(V);
+extract_val(#int{int = V}) -> extract_val(V);
+extract_val(#long{long = V}) -> extract_val(V);
+extract_val(#float{float = V}) -> extract_val(V);
+extract_val(#double{double = V}) -> extract_val(V);
+extract_val(#string{string = V}) -> extract_val(V);
+extract_val(#identifier{identifier = V}) -> extract_val(V);
+extract_val(V) -> V.
 
 
 
+encode_lp_vec3(#lp_vec3{x = X, y = Y, z = Z}) ->
+    encode_lp_vec3({X, Y, Z});
+encode_lp_vec3([X, Y, Z]) ->
+    encode_lp_vec3({X, Y, Z});
+encode_lp_vec3({X, Y, Z}) ->
+    AbsX = abs(X),
+    AbsY = abs(Y),
+    AbsZ = abs(Z),
+    MaxCoordinate = max(AbsX, max(AbsY, AbsZ)),
+    case MaxCoordinate /= MaxCoordinate orelse MaxCoordinate < (1.0 / 32766.0) of
+        true ->
+            <<0:8>>;
+        false ->
+            ScaleFactor = ceil(MaxCoordinate),
+            NeedContinuation = (ScaleFactor band 3) =/= ScaleFactor,
+            PackedScale = case NeedContinuation of
+                true -> (ScaleFactor band 3) bor 4;
+                false -> ScaleFactor
+            end,
+            ScaleFactorD = float(ScaleFactor),
+            PackX = pack_lp_vec3(X / ScaleFactorD),
+            PackY = pack_lp_vec3(Y / ScaleFactorD),
+            PackZ = pack_lp_vec3(Z / ScaleFactorD),
+            Packed = (PackZ bsl 33) bor (PackY bsl 18) bor (PackX bsl 3) bor PackedScale,
+            Byte1 = Packed band 16#FF,
+            Byte2 = (Packed bsr 8) band 16#FF,
+            Bytes3To6 = (Packed bsr 16) band 16#FFFFFFFF,
+            Header = <<Byte1:8, Byte2:8, Bytes3To6:32/unsigned-integer-big>>,
+            case NeedContinuation of
+                true ->
+                    ContVarInt = encode_type(ScaleFactor bsr 2, varint),
+                    <<Header/binary, ContVarInt/binary>>;
+                false ->
+                    Header
+            end
+    end.
+
+pack_lp_vec3(Val) ->
+    Clamped = max(-1.0, min(1.0, float(Val))),
+    round((Clamped * 0.5 + 0.5) * 32766.0) band 16#7FFF.
+
+encode_seen_advancements(#seen_advancements{action = Action, tab_id = TabId}) ->
+    ActionBin = encode_type(Action, {enum, varint}),
+    TabIdBin = encode_type(TabId, {optional, identifier, extract_val(Action) =:= 0}),
+    <<ActionBin/binary, TabIdBin/binary>>;
+encode_seen_advancements({Action, TabId}) ->
+    ActionBin = encode_type(Action, {enum, varint}),
+    TabIdBin = encode_type(TabId, {optional, identifier, extract_val(Action) =:= 0}),
+    <<ActionBin/binary, TabIdBin/binary>>.
+
+encode_boss_bar(#boss_bar{
+    uuid = UUID,
+    action = Action,
+    title = Title,
+    health = Health,
+    color = Color,
+    division = Division,
+    flags = Flags
+}) ->
+    UUIDBin = encode_type(UUID, uuid),
+    ActionVal = extract_val(Action),
+    ActionBin = encode_type(ActionVal, varint),
+    Payload = case ActionVal of
+        0 ->
+            TitleBin = encode_type(Title, text_component),
+            HealthBin = encode_type(Health, float),
+            ColorBin = encode_enum(Color),
+            DivisionBin = encode_enum(Division),
+            FlagsBin = encode_type(Flags, ubyte),
+            <<TitleBin/binary, HealthBin/binary, ColorBin/binary, DivisionBin/binary, FlagsBin/binary>>;
+        1 ->
+            <<>>;
+        2 ->
+            encode_type(Health, float);
+        3 ->
+            encode_type(Title, text_component);
+        4 ->
+            ColorBin = encode_enum(Color),
+            DivisionBin = encode_enum(Division),
+            <<ColorBin/binary, DivisionBin/binary>>;
+        5 ->
+            encode_type(Flags, ubyte)
+    end,
+    <<UUIDBin/binary, ActionBin/binary, Payload/binary>>.
+
+encode_node(#node{
+    flags = Flags,
+    children = Children,
+    redirect_node = RedirectNode,
+    name = Name,
+    parser_id = ParserID,
+    properties = Properties,
+    suggestions_type = SuggestionsType
+}) ->
+    FlagsVal = extract_val(Flags),
+    FlagsBin = encode_byte(FlagsVal),
+    ChildrenBin = encode_type(Children, {prefixed_array, varint}),
+    UnsignedFlags = FlagsVal band 16#FF,
+    HasRedirect = (UnsignedFlags band 16#08) =/= 0,
+    RedirectBin = encode_optional(RedirectNode, varint, HasRedirect),
+    NodeType = UnsignedFlags band 16#03,
+    HasName = (NodeType =:= 1) orelse (NodeType =:= 2),
+    NameBin = encode_optional(Name, string, HasName),
+    IsArgument = (NodeType =:= 2),
+    ParserIDBin = encode_optional(ParserID, varint, IsArgument),
+    PropertiesBin = case IsArgument of
+        true ->
+            PID = extract_val(ParserID),
+            encode_parser_properties(Properties, PID);
+        false ->
+            <<>>
+    end,
+    HasSuggestions = (UnsignedFlags band 16#10) =/= 0,
+    SuggestionsBin = encode_optional(SuggestionsType, identifier, HasSuggestions),
+    <<FlagsBin/binary, ChildrenBin/binary, RedirectBin/binary, NameBin/binary, ParserIDBin/binary, PropertiesBin/binary, SuggestionsBin/binary>>;
+encode_node({Flags, Children, RedirectNode, Name, ParserID, Properties, SuggestionsType}) ->
+    encode_node(#node{
+        flags = Flags,
+        children = Children,
+        redirect_node = RedirectNode,
+        name = Name,
+        parser_id = ParserID,
+        properties = Properties,
+        suggestions_type = SuggestionsType
+    });
+encode_node({Flags, _ChildrenCount, Children, RedirectNode, Name, ParserID, Properties, SuggestionsType}) ->
+    encode_node(#node{
+        flags = Flags,
+        children = Children,
+        redirect_node = RedirectNode,
+        name = Name,
+        parser_id = ParserID,
+        properties = Properties,
+        suggestions_type = SuggestionsType
+    }).
+
+encode_parser_properties(Properties0, 1) -> % brigadier:float
+    Properties = extract_val(Properties0),
+    {Flags0, Min0, Max0} = case Properties of
+        {F, Mi, Ma} -> {F, Mi, Ma};
+        _ -> {0, undefined, undefined}
+    end,
+    Flags = extract_val(Flags0),
+    Min = extract_val(Min0),
+    Max = extract_val(Max0),
+    FlagsBin = encode_byte(Flags),
+    MinBin = encode_optional(Min, float, (Flags band 16#01) =/= 0),
+    MaxBin = encode_optional(Max, float, (Flags band 16#02) =/= 0),
+    <<FlagsBin/binary, MinBin/binary, MaxBin/binary>>;
+encode_parser_properties(Properties0, 2) -> % brigadier:double
+    Properties = extract_val(Properties0),
+    {Flags0, Min0, Max0} = case Properties of
+        {F, Mi, Ma} -> {F, Mi, Ma};
+        _ -> {0, undefined, undefined}
+    end,
+    Flags = extract_val(Flags0),
+    Min = extract_val(Min0),
+    Max = extract_val(Max0),
+    FlagsBin = encode_byte(Flags),
+    MinBin = encode_optional(Min, double, (Flags band 16#01) =/= 0),
+    MaxBin = encode_optional(Max, double, (Flags band 16#02) =/= 0),
+    <<FlagsBin/binary, MinBin/binary, MaxBin/binary>>;
+encode_parser_properties(Properties0, 3) -> % brigadier:integer
+    Properties = extract_val(Properties0),
+    {Flags0, Min0, Max0} = case Properties of
+        {F, Mi, Ma} -> {F, Mi, Ma};
+        _ -> {0, undefined, undefined}
+    end,
+    Flags = extract_val(Flags0),
+    Min = extract_val(Min0),
+    Max = extract_val(Max0),
+    FlagsBin = encode_byte(Flags),
+    MinBin = encode_optional(Min, int, (Flags band 16#01) =/= 0),
+    MaxBin = encode_optional(Max, int, (Flags band 16#02) =/= 0),
+    <<FlagsBin/binary, MinBin/binary, MaxBin/binary>>;
+encode_parser_properties(Properties0, 4) -> % brigadier:long
+    Properties = extract_val(Properties0),
+    {Flags0, Min0, Max0} = case Properties of
+        {F, Mi, Ma} -> {F, Mi, Ma};
+        _ -> {0, undefined, undefined}
+    end,
+    Flags = extract_val(Flags0),
+    Min = extract_val(Min0),
+    Max = extract_val(Max0),
+    FlagsBin = encode_byte(Flags),
+    MinBin = encode_optional(Min, long, (Flags band 16#01) =/= 0),
+    MaxBin = encode_optional(Max, long, (Flags band 16#02) =/= 0),
+    <<FlagsBin/binary, MinBin/binary, MaxBin/binary>>;
+encode_parser_properties(Behavior, 5) -> % brigadier:string
+    encode_type(extract_val(Behavior), varint);
+encode_parser_properties(Flags, 6) -> % minecraft:entity
+    encode_byte(extract_val(Flags));
+encode_parser_properties(Min, 23) -> % minecraft:time
+    encode_int(extract_val(Min));
+encode_parser_properties(Registry, PID) when PID >= 24, PID =< 27 -> % resource/tag
+    encode_identifier(extract_val(Registry));
+encode_parser_properties(Flags, 34) -> % minecraft:score_holder
+    encode_byte(extract_val(Flags));
+encode_parser_properties(_Properties, _PID) ->
+    <<>>.
+
+
+encode_delete_chat(#delete_chat{
+    message_id = MsgId,
+    signature = Signature
+}) ->
+    MsgIdVal = extract_val(MsgId),
+    MsgIdBin = encode_varint(MsgIdVal),
+    IsTrue = (MsgIdVal =:= 0),
+    SignatureBin = encode_optional(Signature, {byte_array, 256}, IsTrue),
+    <<MsgIdBin/binary, SignatureBin/binary>>.
+
+encode_chat_type(#chat_type{
+    translation_key = TranslationKey,
+    parameters = Parameters,
+    style = Style
+}) ->
+    TransKeyBin = encode_type(TranslationKey, string),
+    ParamsBin = encode_type(Parameters, {prefixed_array, {enum, [sender, target, content]}}),
+    StyleBin = encode_type(Style, nbt),
+    <<TransKeyBin/binary, ParamsBin/binary, StyleBin/binary>>;
+encode_chat_type({TranslationKey, Parameters, Style}) ->
+    TransKeyBin = encode_type(TranslationKey, string),
+    ParamsBin = encode_type(Parameters, {prefixed_array, {enum, [sender, target, content]}}),
+    StyleBin = encode_type(Style, nbt),
+    <<TransKeyBin/binary, ParamsBin/binary, StyleBin/binary>>.
+
+encode_player_info_update(#player_info_update{actions = Actions, players = Players}) ->
+    encode_player_info_update(Actions, Players);
+encode_player_info_update({Actions, Players}) ->
+    encode_player_info_update(Actions, Players).
+
+encode_player_info_update(Actions, Players) ->
+    ActionsVal = extract_val(Actions),
+    ActionsBin = encode_type(ActionsVal, ubyte),
+    CountBin = encode_type(length(Players), varint),
+    PlayersBin = iolist_to_binary([encode_player_info_entry(Entry, ActionsVal) || Entry <- Players]),
+    <<ActionsBin/binary, CountBin/binary, PlayersBin/binary>>.
+
+encode_player_info_entry(#player_info_entry{uuid = UUID, actions = Actions}, ActionsMask) ->
+    UUIDBin = encode_type(UUID, uuid),
+    ActionsBin = encode_player_actions(Actions, ActionsMask),
+    <<UUIDBin/binary, ActionsBin/binary>>;
+encode_player_info_entry({UUID, Actions}, ActionsMask) ->
+    UUIDBin = encode_type(UUID, uuid),
+    ActionsBin = encode_player_actions(Actions, ActionsMask),
+    <<UUIDBin/binary, ActionsBin/binary>>.
+
+encode_player_actions(ActionsList, ActionsMask) ->
+    ActionBits = [
+        {16#01, add_player, fun encode_action_add_player/1},
+        {16#02, initialize_chat, fun encode_action_initialize_chat/1},
+        {16#04, update_game_mode, fun encode_action_update_game_mode/1},
+        {16#08, update_listed, fun encode_action_update_listed/1},
+        {16#10, update_latency, fun encode_action_update_latency/1},
+        {16#20, update_display_name, fun encode_action_update_display_name/1},
+        {16#40, update_list_order, fun encode_action_update_list_order/1}
+    ],
+    encode_player_actions_loop(ActionsList, ActionsMask, ActionBits, []).
+
+encode_player_actions_loop(_ActionsList, _ActionsMask, [], Acc) ->
+    iolist_to_binary(lists:reverse(Acc));
+encode_player_actions_loop(ActionsList, ActionsMask, [{Bit, Tag, EncodeFun} | Rest], Acc) ->
+    case (ActionsMask band Bit) =/= 0 of
+        true ->
+            {ActionVal, RemainingList} = get_action_val(Tag, ActionsList),
+            Bin = EncodeFun(ActionVal),
+            encode_player_actions_loop(RemainingList, ActionsMask, Rest, [Bin | Acc]);
+        false ->
+            encode_player_actions_loop(ActionsList, ActionsMask, Rest, Acc)
+    end.
+
+get_action_val(Tag, ActionsList) ->
+    case lists:keyfind(Tag, 1, ActionsList) of
+        {Tag, Arg1, Arg2} ->
+            {{Tag, Arg1, Arg2}, lists:keydelete(Tag, 1, ActionsList)};
+        {Tag, Arg1} ->
+            {Arg1, lists:keydelete(Tag, 1, ActionsList)};
+        false ->
+            case ActionsList of
+                [Head | Tail] -> {Head, Tail};
+                [] -> {undefined, []}
+            end
+    end.
+
+encode_action_add_player({add_player, Name, Properties}) ->
+    encode_action_add_player({Name, Properties});
+encode_action_add_player({Name, Properties}) ->
+    NameBin = encode_type(Name, string),
+    CountBin = encode_type(length(Properties), varint),
+    PropsBin = encode_properties(Properties),
+    <<NameBin/binary, CountBin/binary, PropsBin/binary>>.
+
+encode_action_initialize_chat({initialize_chat, ChatSession}) ->
+    encode_action_initialize_chat(ChatSession);
+encode_action_initialize_chat(ChatSession) ->
+    encode_prefixed_optional(ChatSession, [uuid, long, byte_array, byte_array]).
+
+encode_action_update_game_mode({update_game_mode, GameMode}) ->
+    encode_action_update_game_mode(GameMode);
+encode_action_update_game_mode(GameMode) ->
+    encode_type(GameMode, varint).
+
+encode_action_update_listed({update_listed, Listed}) ->
+    encode_action_update_listed(Listed);
+encode_action_update_listed(Listed) ->
+    encode_type(Listed, bool).
+
+encode_action_update_latency({update_latency, Latency}) ->
+    encode_action_update_latency(Latency);
+encode_action_update_latency(Latency) ->
+    encode_type(Latency, varint).
+
+encode_action_update_display_name({update_display_name, DisplayName}) ->
+    encode_action_update_display_name(DisplayName);
+encode_action_update_display_name(DisplayName) ->
+    encode_prefixed_optional(DisplayName, json_text_component).
+
+encode_action_update_list_order({update_list_order, ListOrder}) ->
+    encode_action_update_list_order(ListOrder);
+encode_action_update_list_order(ListOrder) ->
+    encode_type(ListOrder, varint).
+
+encode_set_equipment(#set_equipment{entity_id = EntityID, equipment = Equipment}) ->
+    encode_set_equipment(EntityID, Equipment);
+encode_set_equipment({EntityID, Equipment}) ->
+    encode_set_equipment(EntityID, Equipment).
+
+encode_set_equipment(EntityID, Equipment) ->
+    EntityIDBin = encode_type(EntityID, varint),
+    EquipmentBin = encode_equipment_list(Equipment),
+    <<EntityIDBin/binary, EquipmentBin/binary>>.
+
+encode_equipment_list([]) ->
+    <<>>;
+encode_equipment_list([Entry | Rest]) ->
+    HasNext = Rest =/= [],
+    {Slot, Item} = case Entry of
+        {S, I} -> {S, I};
+        _ -> error({invalid_equipment_entry, Entry})
+    end,
+    SlotVal = extract_val(Slot),
+    RawByte = case HasNext of
+        true -> (SlotVal band 16#7F) bor 16#80;
+        false -> SlotVal band 16#7F
+    end,
+    SlotBin = encode_byte(RawByte),
+    ItemBin = encode_type(Item, slot),
+    RestBin = encode_equipment_list(Rest),
+    <<SlotBin/binary, ItemBin/binary, RestBin/binary>>.
+
+encode_set_objective(#set_objective{
+    objective_name = ObjectiveName,
+    mode = Mode,
+    objective_value = ObjectiveValue,
+    type = Type,
+    number_format = NumberFormat
+}) ->
+    encode_set_objective(ObjectiveName, Mode, ObjectiveValue, Type, NumberFormat);
+encode_set_objective({ObjectiveName, Mode, ObjectiveValue, Type, NumberFormat}) ->
+    encode_set_objective(ObjectiveName, Mode, ObjectiveValue, Type, NumberFormat);
+encode_set_objective({ObjectiveName, Mode}) ->
+    encode_set_objective(ObjectiveName, Mode, undefined, undefined, undefined).
+
+encode_set_objective(ObjectiveName, Mode0, ObjectiveValue, Type0, NumberFormat) ->
+    NameBin = encode_type(ObjectiveName, string),
+    Mode = extract_val(Mode0),
+    ModeBin = encode_type(Mode, byte),
+    Payload = case Mode of
+        1 ->
+            <<>>;
+        _ when Mode =:= 0; Mode =:= 2 ->
+            ValueBin = encode_type(ObjectiveValue, text_component),
+            TypeVal = case extract_val(Type0) of
+                integer -> 0;
+                hearts -> 1;
+                OtherType -> extract_val(OtherType)
+            end,
+            TypeBin = encode_enum(TypeVal, varint),
+            case NumberFormat of
+                undefined ->
+                    HasNFBin = encode_type(false, bool),
+                    <<ValueBin/binary, TypeBin/binary, HasNFBin/binary>>;
+                false ->
+                    HasNFBin = encode_type(false, bool),
+                    <<ValueBin/binary, TypeBin/binary, HasNFBin/binary>>;
+                none ->
+                    HasNFBin = encode_type(false, bool),
+                    <<ValueBin/binary, TypeBin/binary, HasNFBin/binary>>;
+                _ ->
+                    HasNFBin = encode_type(true, bool),
+                    NFBin = encode_number_format(NumberFormat),
+                    <<ValueBin/binary, TypeBin/binary, HasNFBin/binary, NFBin/binary>>
+            end
+    end,
+    <<NameBin/binary, ModeBin/binary, Payload/binary>>.
+
+encode_number_format(blank) ->
+    encode_enum(0, varint);
+encode_number_format(0) ->
+    encode_enum(0, varint);
+encode_number_format({blank}) ->
+    encode_enum(0, varint);
+encode_number_format({0}) ->
+    encode_enum(0, varint);
+encode_number_format({blank, _}) ->
+    encode_enum(0, varint);
+encode_number_format({0, _}) ->
+    encode_enum(0, varint);
+encode_number_format({styled, Styling}) ->
+    FormatIDBin = encode_enum(1, varint),
+    StylingBin = encode_type(Styling, nbt),
+    <<FormatIDBin/binary, StylingBin/binary>>;
+encode_number_format({1, Styling}) ->
+    FormatIDBin = encode_enum(1, varint),
+    StylingBin = encode_type(Styling, nbt),
+    <<FormatIDBin/binary, StylingBin/binary>>;
+encode_number_format({fixed, Content}) ->
+    FormatIDBin = encode_enum(2, varint),
+    ContentBin = encode_type(Content, text_component),
+    <<FormatIDBin/binary, ContentBin/binary>>;
+encode_number_format({2, Content}) ->
+    FormatIDBin = encode_enum(2, varint),
+    ContentBin = encode_type(Content, text_component),
+    <<FormatIDBin/binary, ContentBin/binary>>.
+
+encode_set_player_team(#set_player_team{
+    team_name = TeamName,
+    method = Method,
+    team_display_name = TeamDisplayName,
+    team_prefix = TeamPrefix,
+    team_suffix = TeamSuffix,
+    name_tag_visibility = NameTagVis,
+    collision_rule = CollisionRule,
+    team_color = TeamColor,
+    friendly_flags = FriendlyFlags,
+    entities = Entities
+}) ->
+    encode_set_player_team(TeamName, Method, TeamDisplayName, TeamPrefix, TeamSuffix, NameTagVis, CollisionRule, TeamColor, FriendlyFlags, Entities);
+encode_set_player_team({TeamName, Method, TeamDisplayName, TeamPrefix, TeamSuffix, NameTagVis, CollisionRule, TeamColor, FriendlyFlags, Entities}) ->
+    encode_set_player_team(TeamName, Method, TeamDisplayName, TeamPrefix, TeamSuffix, NameTagVis, CollisionRule, TeamColor, FriendlyFlags, Entities);
+encode_set_player_team({TeamName, Method}) ->
+    encode_set_player_team(TeamName, Method, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined).
+
+encode_set_player_team(TeamName, Method0, TeamDisplayName, TeamPrefix, TeamSuffix, NameTagVis, CollisionRule, TeamColor, FriendlyFlags, Entities) ->
+    NameBin = encode_type(TeamName, string),
+    Method = extract_val(Method0),
+    MethodBin = encode_type(Method, byte),
+    Payload = case Method of
+        0 ->
+            DispBin = encode_type(TeamDisplayName, text_component),
+            PrefBin = encode_type(TeamPrefix, text_component),
+            SuffBin = encode_type(TeamSuffix, text_component),
+            VisVal = encode_team_name_tag_visibility(NameTagVis),
+            VisBin = encode_enum(VisVal, varint),
+            CollVal = encode_team_collision_rule(CollisionRule),
+            CollBin = encode_enum(CollVal, varint),
+            ColVal = encode_team_color(TeamColor),
+            ColBin = encode_enum(ColVal, varint),
+            FlagsVal = extract_val(FriendlyFlags),
+            FlagsBin = encode_type(FlagsVal, byte),
+            EntList = extract_entities_list(Entities),
+            EntBin = encode_type(EntList, {prefixed_array, string}),
+            <<DispBin/binary, PrefBin/binary, SuffBin/binary, VisBin/binary, CollBin/binary, ColBin/binary, FlagsBin/binary, EntBin/binary>>;
+        1 ->
+            <<>>;
+        2 ->
+            DispBin = encode_type(TeamDisplayName, text_component),
+            PrefBin = encode_type(TeamPrefix, text_component),
+            SuffBin = encode_type(TeamSuffix, text_component),
+            VisVal = encode_team_name_tag_visibility(NameTagVis),
+            VisBin = encode_enum(VisVal, varint),
+            CollVal = encode_team_collision_rule(CollisionRule),
+            CollBin = encode_enum(CollVal, varint),
+            ColVal = encode_team_color(TeamColor),
+            ColBin = encode_enum(ColVal, varint),
+            FlagsVal = extract_val(FriendlyFlags),
+            FlagsBin = encode_type(FlagsVal, byte),
+            <<DispBin/binary, PrefBin/binary, SuffBin/binary, VisBin/binary, CollBin/binary, ColBin/binary, FlagsBin/binary>>;
+        3 ->
+            EntList = extract_entities_list(Entities),
+            encode_type(EntList, {prefixed_array, string});
+        4 ->
+            EntList = extract_entities_list(Entities),
+            encode_type(EntList, {prefixed_array, string})
+    end,
+    <<NameBin/binary, MethodBin/binary, Payload/binary>>.
+
+extract_entities_list(#prefixed_array{prefixed_array = List}) -> List;
+extract_entities_list(List) when is_list(List) -> List;
+extract_entities_list(undefined) -> [].
+
+encode_team_name_tag_visibility(always) -> 0;
+encode_team_name_tag_visibility("always") -> 0;
+encode_team_name_tag_visibility(never) -> 1;
+encode_team_name_tag_visibility("never") -> 1;
+encode_team_name_tag_visibility(hide_for_other_teams) -> 2;
+encode_team_name_tag_visibility("hide_for_other_teams") -> 2;
+encode_team_name_tag_visibility(hide_other_teams) -> 2;
+encode_team_name_tag_visibility("hide_other_teams") -> 2;
+encode_team_name_tag_visibility(hide_for_own_teams) -> 3;
+encode_team_name_tag_visibility("hide_for_own_teams") -> 3;
+encode_team_name_tag_visibility(hide_own_team) -> 3;
+encode_team_name_tag_visibility("hide_own_team") -> 3;
+encode_team_name_tag_visibility(V) -> extract_val(V).
+
+encode_team_collision_rule(always) -> 0;
+encode_team_collision_rule("always") -> 0;
+encode_team_collision_rule(never) -> 1;
+encode_team_collision_rule("never") -> 1;
+encode_team_collision_rule(push_other_teams) -> 2;
+encode_team_collision_rule("push_other_teams") -> 2;
+encode_team_collision_rule(push_other) -> 2;
+encode_team_collision_rule("push_other") -> 2;
+encode_team_collision_rule(push_own_team) -> 3;
+encode_team_collision_rule("push_own_team") -> 3;
+encode_team_collision_rule(push_own) -> 3;
+encode_team_collision_rule("push_own") -> 3;
+encode_team_collision_rule(V) -> extract_val(V).
+
+encode_team_color(black) -> 0;
+encode_team_color(dark_blue) -> 1;
+encode_team_color(dark_green) -> 2;
+encode_team_color(dark_aqua) -> 3;
+encode_team_color(dark_red) -> 4;
+encode_team_color(dark_purple) -> 5;
+encode_team_color(gold) -> 6;
+encode_team_color(gray) -> 7;
+encode_team_color(dark_gray) -> 8;
+encode_team_color(blue) -> 9;
+encode_team_color(green) -> 10;
+encode_team_color(aqua) -> 11;
+encode_team_color(red) -> 12;
+encode_team_color(light_purple) -> 13;
+encode_team_color(yellow) -> 14;
+encode_team_color(white) -> 15;
+encode_team_color(obfuscated) -> 16;
+encode_team_color(bold) -> 17;
+encode_team_color(strikethrough) -> 18;
+encode_team_color(underlined) -> 19;
+encode_team_color(italic) -> 20;
+encode_team_color(reset) -> 21;
+encode_team_color(V) -> extract_val(V).
+
+encode_waypoint_data(#waypoint_data{
+    waypoint_type = Type,
+    x = X,
+    y = Y,
+    z = Z,
+    angle = Angle
+}) ->
+    encode_waypoint_data(Type, X, Y, Z, Angle);
+encode_waypoint_data({waypoint_data, Type, X, Z}) ->
+    encode_waypoint_data(Type, X, undefined, Z, undefined);
+encode_waypoint_data({waypoint_data, Type, Angle}) ->
+    encode_waypoint_data(Type, undefined, undefined, undefined, Angle);
+encode_waypoint_data({waypoint_data, Type}) ->
+    encode_waypoint_data(Type, undefined, undefined, undefined, undefined);
+encode_waypoint_data({Type, X, Y, Z}) ->
+    encode_waypoint_data(Type, X, Y, Z, undefined);
+encode_waypoint_data({Type, X, Z}) ->
+    encode_waypoint_data(Type, X, undefined, Z, undefined);
+encode_waypoint_data({Type, Angle}) ->
+    encode_waypoint_data(Type, undefined, undefined, undefined, Angle);
+encode_waypoint_data(Type) when is_integer(Type); is_atom(Type) ->
+    encode_waypoint_data(Type, undefined, undefined, undefined, undefined).
+
+encode_waypoint_data(Type0, X0, Y0, Z0, Angle0) ->
+    TypeVal = case extract_val(Type0) of
+        0 -> 0;
+        empty -> 0;
+        1 -> 1;
+        vec3i -> 1;
+        2 -> 2;
+        chunk -> 2;
+        3 -> 3;
+        azimuth -> 3;
+        Other -> extract_val(Other)
+    end,
+    TypeBin = encode_enum(TypeVal, varint),
+    PayloadBin = case TypeVal of
+        0 ->
+            <<>>;
+        1 ->
+            XBin = encode_type(extract_val(X0), varint),
+            YBin = encode_type(extract_val(Y0), varint),
+            ZBin = encode_type(extract_val(Z0), varint),
+            <<XBin/binary, YBin/binary, ZBin/binary>>;
+        2 ->
+            XBin = encode_type(extract_val(X0), varint),
+            ZBin = encode_type(extract_val(Z0), varint),
+            <<XBin/binary, ZBin/binary>>;
+        3 ->
+            AngleBin = encode_type(extract_val(Angle0), float),
+            <<AngleBin/binary>>;
+        _ ->
+            error({unknown_waypoint_type, TypeVal})
+    end,
+    <<TypeBin/binary, PayloadBin/binary>>.
+
+encode_stop_sound(#stop_sound{
+    flags = Flags,
+    source = Source,
+    sound = Sound
+}) ->
+    encode_stop_sound(Flags, Source, Sound);
+encode_stop_sound({stop_sound, Source, Sound}) ->
+    encode_stop_sound(undefined, Source, Sound);
+encode_stop_sound({stop_sound, Source}) ->
+    encode_stop_sound(undefined, Source, undefined);
+encode_stop_sound({Source, Sound}) ->
+    encode_stop_sound(undefined, Source, Sound);
+encode_stop_sound(Map) when is_map(Map) ->
+    Flags = maps:get(flags, Map, undefined),
+    Source = maps:get(source, Map, undefined),
+    Sound = maps:get(sound, Map, undefined),
+    encode_stop_sound(Flags, Source, Sound);
+encode_stop_sound(Source) when is_atom(Source); is_integer(Source); is_binary(Source); is_tuple(Source) ->
+    encode_stop_sound(undefined, Source, undefined).
+
+encode_stop_sound(Flags0, Source0, Sound0) ->
+    HasSource = (Source0 =/= undefined andalso Source0 =/= none),
+    HasSound = (Sound0 =/= undefined andalso Sound0 =/= none),
+    FlagsVal = case Flags0 of
+        undefined ->
+            (if HasSource -> 1; true -> 0 end) bor (if HasSound -> 2; true -> 0 end);
+        _ ->
+            extract_val(Flags0)
+    end,
+    FlagsBin = encode_type(FlagsVal, byte),
+    SourceBin = case (FlagsVal band 1) =/= 0 of
+        true ->
+            SourceVal = encode_stop_sound_source(extract_val(Source0)),
+            encode_type(SourceVal, {enum, varint});
+        false ->
+            <<>>
+    end,
+    SoundBin = case (FlagsVal band 2) =/= 0 of
+        true ->
+            encode_type(Sound0, identifier);
+        false ->
+            <<>>
+    end,
+    <<FlagsBin/binary, SourceBin/binary, SoundBin/binary>>.
+
+encode_stop_sound_source(master) -> 0;
+encode_stop_sound_source(music) -> 1;
+encode_stop_sound_source(record) -> 2;
+encode_stop_sound_source(weather) -> 3;
+encode_stop_sound_source(block) -> 4;
+encode_stop_sound_source(hostile) -> 5;
+encode_stop_sound_source(neutral) -> 6;
+encode_stop_sound_source(player) -> 7;
+encode_stop_sound_source(ambient) -> 8;
+encode_stop_sound_source(voice) -> 9;
+encode_stop_sound_source(V) -> extract_val(V).
+
+encode_set_score(#set_score{
+    entity_name = EntityName,
+    objective_name = ObjectiveName,
+    value = Value,
+    display_name = DisplayName,
+    number_format = NumberFormat
+}) ->
+    encode_set_score(EntityName, ObjectiveName, Value, DisplayName, NumberFormat);
+encode_set_score({EntityName, ObjectiveName, Value, DisplayName, NumberFormat}) ->
+    encode_set_score(EntityName, ObjectiveName, Value, DisplayName, NumberFormat);
+encode_set_score({EntityName, ObjectiveName, Value}) ->
+    encode_set_score(EntityName, ObjectiveName, Value, undefined, undefined).
+
+encode_set_score(EntityName, ObjectiveName, Value, DisplayName, NumberFormat) ->
+    EntityBin = encode_type(EntityName, string),
+    ObjectiveBin = encode_type(ObjectiveName, string),
+    ValueBin = encode_type(Value, varint),
+    DisplayBin = case DisplayName of
+        undefined -> encode_type(false, bool);
+        false -> encode_type(false, bool);
+        none -> encode_type(false, bool);
+        _ ->
+            HasDNBin = encode_type(true, bool),
+            DNBin = encode_type(DisplayName, text_component),
+            <<HasDNBin/binary, DNBin/binary>>
+    end,
+    FormatBin = case NumberFormat of
+        undefined -> encode_type(false, bool);
+        false -> encode_type(false, bool);
+        none -> encode_type(false, bool);
+        _ ->
+            HasNFBin = encode_type(true, bool),
+            NFBin = encode_number_format(NumberFormat),
+            <<HasNFBin/binary, NFBin/binary>>
+    end,
+    <<EntityBin/binary, ObjectiveBin/binary, ValueBin/binary, DisplayBin/binary, FormatBin/binary>>.
+
+encode_update_advancements(#update_advancements{
+    reset = Reset,
+    advancement_mapping = AdvancementMapping,
+    identifiers = Identifiers,
+    progress_mapping = ProgressMapping
+}) ->
+    encode_update_advancements(Reset, AdvancementMapping, Identifiers, ProgressMapping);
+encode_update_advancements({Reset, AdvancementMapping, Identifiers, ProgressMapping}) ->
+    encode_update_advancements(Reset, AdvancementMapping, Identifiers, ProgressMapping).
+
+encode_update_advancements(Reset, AdvancementMapping, Identifiers, ProgressMapping) ->
+    ResetBin = encode_bool(Reset),
+    MappingBin = encode_prefixed_array(AdvancementMapping, [identifier, advancement]),
+    IdentBin  = encode_prefixed_array(Identifiers, identifier),
+    ProgBin   = encode_prefixed_array(ProgressMapping, [identifier, advancement_progress]),
+    <<ResetBin/binary, MappingBin/binary, IdentBin/binary, ProgBin/binary>>.
+
+encode_type_advancement(#advancement{
+    parent_id      = ParentId,
+    display_data   = DisplayData,
+    requirements   = Requirements,
+    sends_telemetry = SendsTelemetry
+}) ->
+    encode_type_advancement(ParentId, DisplayData, Requirements, SendsTelemetry);
+encode_type_advancement({ParentId, DisplayData, Requirements, SendsTelemetry}) ->
+    encode_type_advancement(ParentId, DisplayData, Requirements, SendsTelemetry).
+
+encode_type_advancement(ParentId, DisplayData, Requirements, SendsTelemetry) ->
+    ParentBin   = encode_prefixed_optional(ParentId, identifier),
+    DisplayBin  = encode_prefixed_optional_advancement_display(DisplayData),
+    ReqBin      = encode_prefixed_array(Requirements, {prefixed_array, string}),
+    TelBin      = encode_bool(SendsTelemetry),
+    <<ParentBin/binary, DisplayBin/binary, ReqBin/binary, TelBin/binary>>.
+
+encode_prefixed_optional_advancement_display(none) ->
+    encode_bool(false);
+encode_prefixed_optional_advancement_display(undefined) ->
+    encode_bool(false);
+encode_prefixed_optional_advancement_display({some, Display}) ->
+    <<(encode_bool(true))/binary, (encode_type_advancement_display(Display))/binary>>;
+encode_prefixed_optional_advancement_display(#advancement_display{} = Display) ->
+    <<(encode_bool(true))/binary, (encode_type_advancement_display(Display))/binary>>;
+encode_prefixed_optional_advancement_display(Display) when is_tuple(Display); is_map(Display) ->
+    <<(encode_bool(true))/binary, (encode_type_advancement_display(Display))/binary>>.
+
+encode_type_advancement_display(#advancement_display{
+    title              = Title,
+    description        = Description,
+    icon               = Icon,
+    frame_type         = FrameType,
+    flags              = Flags,
+    background_texture = BgTexture,
+    x                  = X,
+    y                  = Y
+}) ->
+    encode_type_advancement_display(Title, Description, Icon, FrameType, Flags, BgTexture, X, Y);
+encode_type_advancement_display({Title, Description, Icon, FrameType, Flags, BgTexture, X, Y}) ->
+    encode_type_advancement_display(Title, Description, Icon, FrameType, Flags, BgTexture, X, Y).
+
+encode_type_advancement_display(Title, Description, Icon, FrameType, Flags0, BgTexture, X, Y) ->
+    Flags = extract_val(Flags0),
+    TitleBin  = encode_text_component(Title),
+    DescBin   = encode_text_component(Description),
+    IconBin   = encode_slot(Icon),
+    FrameBin  = encode_varint(FrameType),
+    FlagsBin  = encode_int(Flags),
+    BgBin     = case (Flags band 16#01) =/= 0 of
+                    true  -> encode_identifier(BgTexture);
+                    false -> <<>>
+                end,
+    XBin = encode_float(X),
+    YBin = encode_float(Y),
+    <<TitleBin/binary, DescBin/binary, IconBin/binary, FrameBin/binary,
+      FlagsBin/binary, BgBin/binary, XBin/binary, YBin/binary>>.
+
+encode_type_advancement_progress(#advancement_progress{criteria = Criteria}) ->
+    encode_type_advancement_progress(Criteria);
+encode_type_advancement_progress(Criteria) when is_list(Criteria) ->
+    encode_prefixed_array(Criteria, [identifier, {prefixed_optional, long}]).
+
+%% Hook advancement and advancement_progress into encode_type/2
+%% (these are only used via encode_prefixed_array_list, so we add them here for completeness)
+encode_type_advancement_hook(Data, advancement) ->
+    encode_type_advancement(Data);
+encode_type_advancement_hook(Data, advancement_progress) ->
+    encode_type_advancement_progress(Data).
 
 

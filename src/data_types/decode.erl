@@ -1,5 +1,5 @@
 -module(decode).
--export([decode_type/2]).
+-export([decode_type/2, decode_node/1, decode_boss_bar/1, decode_seen_advancements/1, decode_delete_chat/1, decode_chat_type/1, decode_player_info_update/1, decode_set_equipment/1, decode_set_objective/1, decode_set_player_team/1, decode_waypoint_data/1, decode_stop_sound/1, decode_set_score/1, decode_update_advancements/1]).
 -include("src/data_types/records.hrl").
 
 decode_type(Data, Type) ->
@@ -110,6 +110,38 @@ decode_type(Data, Type) ->
             decode_debug_structure_info(Data);
         debug_structure_piece ->
             decode_debug_structure_piece(Data);
+        lp_vec3 ->
+            decode_lp_vec3(Data);
+        seen_advancements ->
+            decode_seen_advancements(Data);
+        boss_bar ->
+            decode_boss_bar(Data);
+        node ->
+            decode_node(Data);
+        delete_chat ->
+            decode_delete_chat(Data);
+        chat_type ->
+            decode_chat_type(Data);
+        player_info_update ->
+            decode_player_info_update(Data);
+        set_equipment ->
+            decode_set_equipment(Data);
+        set_objective ->
+            decode_set_objective(Data);
+        set_player_team ->
+            decode_set_player_team(Data);
+        waypoint_data ->
+            decode_waypoint_data(Data);
+        stop_sound ->
+            decode_stop_sound(Data);
+        set_score ->
+            decode_set_score(Data);
+        update_advancements ->
+            decode_update_advancements(Data);
+        advancement ->
+            decode_advancement(Data);
+        advancement_progress ->
+            decode_advancement_progress(Data);
 
         %%Component Data Types
         _ -> 
@@ -123,10 +155,17 @@ extract_value(#short{short = V}) -> V;
 extract_value(#ushort{ushort = V}) -> V;
 extract_value(#int{int = V}) -> V;
 extract_value(#long{long = V}) -> V;
+extract_value(#float{float = V}) -> V;
+extract_value(#double{double = V}) -> V;
+extract_value(#uuid{uuid = V}) -> V;
+extract_value(#string{string = V}) -> V;
+extract_value(#identifier{identifier = V}) -> extract_value(V);
 extract_value(#varint{varint = V}) -> V;
 extract_value(#varlong{varlong = V}) -> V;
 extract_value(#enum{enum = V}) -> extract_value(V);
+extract_value(#optional{optional = V}) -> extract_value(V);
 extract_value(V) when not is_tuple(V) -> V;
+
 extract_value(V) -> V.
 
 decode_nbt(Data) ->
@@ -249,12 +288,38 @@ decode_byte_array(Data, PrefixType) when is_atom(PrefixType) ->
     <<ByteArray:Length/binary, Data2/binary>> = RestData,
     {Data2, #byte_array{byte_array = ByteArray}}.
 
+decode_optional(Data, Types, true) when is_list(Types) ->
+    {DecodedFields, RestData} = lists:mapfoldl(
+        fun(ElemType, AccData) ->
+            {NewData, Elem} = decode_type(AccData, ElemType),
+            {Elem, NewData}
+        end,
+        Data,
+        Types
+    ),
+    {RestData, #optional{some = some, optional = list_to_tuple(DecodedFields)}};
 decode_optional(Data, Type, true) ->
     {RestData, Value} = decode_type(Data, Type),
     {RestData, #optional{some = some, optional = Value}};
 decode_optional(Data, _Type, false) ->
     {Data, #optional{some = none, optional = none}}.
 
+decode_prefixed_optional(Data, InnerTypes) when is_list(InnerTypes) ->
+    {RestData, #bool{bool = IsPresent}} = decode_bool(Data),
+    case IsPresent of
+        true ->
+            {DecodedFields, RestData2} = lists:mapfoldl(
+                fun(ElemType, AccData) ->
+                    {NewData, Elem} = decode_type(AccData, ElemType),
+                    {Elem, NewData}
+                end,
+                RestData,
+                InnerTypes
+            ),
+            {RestData2, #prefixed_optional{some = some, prefixed_optional = list_to_tuple(DecodedFields)}};
+        false ->
+            {RestData, #prefixed_optional{some = none, prefixed_optional = none}}
+    end;
 decode_prefixed_optional(Data, InnerType) ->
     {RestData, #bool{bool = IsPresent}} = decode_bool(Data),
     case IsPresent of
@@ -438,16 +503,11 @@ decode_hashed_slot_add_components(Data, N, Acc) ->
     decode_hashed_slot_add_components(Rest2, N - 1, [{TypeId, Hash} | Acc]).
 
 decode_text_component(Data) when is_binary(Data) ->
-    case Data of
-        <<${, _/binary>> ->
-            {<<>>, #text_component{component_map = text_component:decode(Data)}};
-        <<$[, _/binary>> ->
-            {<<>>, #text_component{component_map = text_component:decode(Data)}};
-        <<$", _/binary>> ->
-            {<<>>, #text_component{component_map = text_component:decode(Data)}};
+    case decode_string(Data) of
+        {Rest, #string{string = Str}} ->
+            {Rest, #text_component{component_map = text_component:decode(Str)}};
         _ ->
-            {Rest, #string{string = Str}} = decode_string(Data),
-            {Rest, #text_component{component_map = text_component:decode(Str)}}
+            {<<>>, #text_component{component_map = text_component:decode(Data)}}
     end;
 decode_text_component(Data) ->
     {<<>>, #text_component{component_map = text_component:decode(Data)}}.
@@ -846,3 +906,590 @@ game_event(Data) ->
     {Data4, #double{double = Y}} = decode_double(Data3),
     {Data5, #double{double = Z}} = decode_double(Data4),
     {Data5, #game_event{type = game_event, event = Event, x = X, y = Y, z = Z}}.
+
+decode_lp_vec3(<<0:8, Rest/binary>>) ->
+    {Rest, #lp_vec3{x = 0.0, y = 0.0, z = 0.0}};
+decode_lp_vec3(<<Byte1:8, Byte2:8, Bytes3To6:32/unsigned-integer-big, Rest0/binary>>) ->
+    Packed = (Bytes3To6 bsl 16) bor (Byte2 bsl 8) bor Byte1,
+    ScaleFactor0 = Byte1 band 3,
+    Res = case (Byte1 band 4) =/= 0 of
+        true ->
+            case decode_varint(Rest0) of
+                {R, #varint{varint = VarIntVal}} ->
+                    {ok, R, ScaleFactor0 bor (VarIntVal bsl 2)};
+                Error ->
+                    Error
+            end;
+        false ->
+            {ok, Rest0, ScaleFactor0}
+    end,
+    case Res of
+        {error, _} = ErrorRes ->
+            ErrorRes;
+        {ok, Rest1, ScaleFactor} ->
+            ScaleFactorD = float(ScaleFactor),
+            X = unpack_lp_vec3(Packed bsr 3) * ScaleFactorD,
+            Y = unpack_lp_vec3(Packed bsr 18) * ScaleFactorD,
+            Z = unpack_lp_vec3(Packed bsr 33) * ScaleFactorD,
+            {Rest1, #lp_vec3{x = X, y = Y, z = Z}}
+    end;
+decode_lp_vec3(_) ->
+    {error, "insufficient data"}.
+
+unpack_lp_vec3(Value) ->
+    V = Value band 32767,
+    VClamped = min(float(V), 32766.0),
+    VClamped * 2.0 / 32766.0 - 1.0.
+
+decode_seen_advancements(Data) ->
+    {Data2, Action} = decode_type(Data, {enum, varint}),
+    IsTrue = extract_value(Action) =:= 0,
+    {Data3, TabId} = decode_type(Data2, {optional, identifier, IsTrue}),
+    {Data3, #seen_advancements{type = seen_advancements, action = Action, tab_id = TabId}}.
+        
+decode_boss_bar(Data) ->
+    {Data2, UUIDRec} = decode_type(Data, uuid),
+    UUID = extract_value(UUIDRec),
+    {Data3, ActionRec} = decode_type(Data2, varint),
+    Action = extract_value(ActionRec),
+    case Action of
+        0 -> 
+            {Data4, Title} = decode_type(Data3, text_component),
+            {Data5, HealthRec} = decode_type(Data4, float),
+            Health = extract_value(HealthRec),
+            {Data6, EnumRec} = decode_enum(Data5),
+            Color = extract_value(EnumRec),
+            {Data7, EnumRec2} = decode_enum(Data6),
+            Division = extract_value(EnumRec2),
+            {Data8, FlagsRec} = decode_type(Data7, ubyte),
+            Flags = extract_value(FlagsRec),
+            {Data8, #boss_bar{type = boss_bar, uuid = UUID, action = 0, title = Title, health = Health, color = Color, division = Division, flags = Flags}};
+        1 ->
+            {Data3, #boss_bar{type = boss_bar, uuid = UUID, action = 1}};
+        2 ->
+            {Data4, HealthRec} = decode_type(Data3, float),
+            Health = extract_value(HealthRec),
+            {Data4, #boss_bar{type = boss_bar, uuid = UUID, action = 2, health = Health}};
+        3 ->
+            {Data4, Title} = decode_type(Data3, text_component),
+            {Data4, #boss_bar{type = boss_bar, uuid = UUID, action = 3, title = Title}};
+        4 ->
+            {Data4, EnumRec} = decode_enum(Data3),
+            Color = extract_value(EnumRec),
+            {Data5, EnumRec2} = decode_enum(Data4),
+            Division = extract_value(EnumRec2),
+            {Data5, #boss_bar{type = boss_bar, uuid = UUID, action = 4, color = Color, division = Division}};
+        5 ->
+            {Data4, FlagsRec} = decode_type(Data3, ubyte),
+            Flags = extract_value(FlagsRec),
+            {Data4, #boss_bar{type = boss_bar, uuid = UUID, action = 5, flags = Flags}};
+        _ ->
+            error({unknown_boss_bar_action, Action})
+    end.
+
+
+decode_node(Data) ->
+    {Data2, #byte{byte = Flags}} = decode_byte(Data),
+    UnsignedFlags = Flags band 16#FF,
+    NodeType = UnsignedFlags band 16#03,
+    {Data3, #varint{varint = ChildrenCount}} = decode_varint(Data2),
+    {Data4, #array{array = Children}} = decode_array(Data3, ChildrenCount, varint),
+    HasRedirect = (UnsignedFlags band 16#08) =/= 0,
+    {Data5, RedirectNode} = decode_optional(Data4, varint, HasRedirect),
+    HasName = (NodeType =:= 1) orelse (NodeType =:= 2),
+    {Data6, Name} = decode_optional(Data5, string, HasName),
+    IsArgument = (NodeType =:= 2),
+    {Data7, ParserID} = decode_optional(Data6, varint, IsArgument),
+    {Data8, Properties} = case IsArgument of
+        true ->
+            PID = extract_value(ParserID),
+            {RestData, PropVal} = decode_parser_properties(Data7, PID),
+            {RestData, #optional{some = some, optional = PropVal}};
+        false ->
+            {Data7, #optional{some = none, optional = none}}
+    end,
+
+    HasSuggestions = (UnsignedFlags band 16#10) =/= 0,
+    {Data9, SuggestionsType} = decode_optional(Data8, identifier, HasSuggestions),
+    {Data9, #node{
+        flags = Flags,
+        children_count = ChildrenCount,
+        children = Children,
+        redirect_node = RedirectNode,
+        name = Name,
+        parser_id = ParserID,
+        properties = Properties,
+        suggestions_type = SuggestionsType
+    }}.
+
+decode_parser_properties(Data, 1) -> % brigadier:float
+    {Data2, #byte{byte = Flags}} = decode_byte(Data),
+    HasMin = (Flags band 16#01) =/= 0,
+    {Data3, Min} = decode_optional(Data2, float, HasMin),
+    HasMax = (Flags band 16#02) =/= 0,
+    {Data4, Max} = decode_optional(Data3, float, HasMax),
+    {Data4, {Flags, Min, Max}};
+decode_parser_properties(Data, 2) -> % brigadier:double
+    {Data2, #byte{byte = Flags}} = decode_byte(Data),
+    HasMin = (Flags band 16#01) =/= 0,
+    {Data3, Min} = decode_optional(Data2, double, HasMin),
+    HasMax = (Flags band 16#02) =/= 0,
+    {Data4, Max} = decode_optional(Data3, double, HasMax),
+    {Data4, {Flags, Min, Max}};
+decode_parser_properties(Data, 3) -> % brigadier:integer
+    {Data2, #byte{byte = Flags}} = decode_byte(Data),
+    HasMin = (Flags band 16#01) =/= 0,
+    {Data3, Min} = decode_optional(Data2, int, HasMin),
+    HasMax = (Flags band 16#02) =/= 0,
+    {Data4, Max} = decode_optional(Data3, int, HasMax),
+    {Data4, {Flags, Min, Max}};
+decode_parser_properties(Data, 4) -> % brigadier:long
+    {Data2, #byte{byte = Flags}} = decode_byte(Data),
+    HasMin = (Flags band 16#01) =/= 0,
+    {Data3, Min} = decode_optional(Data2, long, HasMin),
+    HasMax = (Flags band 16#02) =/= 0,
+    {Data4, Max} = decode_optional(Data3, long, HasMax),
+    {Data4, {Flags, Min, Max}};
+decode_parser_properties(Data, 5) -> % brigadier:string
+    {Data2, #varint{varint = Behavior}} = decode_varint(Data),
+    {Data2, Behavior};
+decode_parser_properties(Data, 6) -> % minecraft:entity
+    {Data2, #byte{byte = Flags}} = decode_byte(Data),
+    {Data2, Flags};
+decode_parser_properties(Data, 23) -> % minecraft:time
+    {Data2, #int{int = Min}} = decode_int(Data),
+    {Data2, Min};
+decode_parser_properties(Data, PID) when PID >= 24, PID =< 27 -> % resource/tag
+    {Data2, #identifier{identifier = Registry}} = decode_identifier(Data),
+    {Data2, Registry};
+decode_parser_properties(Data, 34) -> % minecraft:score_holder
+    {Data2, #byte{byte = Flags}} = decode_byte(Data),
+    {Data2, Flags};
+decode_parser_properties(Data, _PID) ->
+    {Data, none}.
+
+decode_delete_chat(Data) ->
+    {Data2, MsgIdRec} = decode_type(Data, varint),
+    MsgIdVal = extract_value(MsgIdRec),
+    IsTrue = (MsgIdVal =:= 0),
+    {Data3, Signature} = decode_optional(Data2, {byte_array, 256}, IsTrue),
+    {Data3, #delete_chat{message_id = MsgIdRec, signature = Signature}}.
+
+decode_chat_type(Data) ->
+    {Data2, TranslationKey} = decode_type(Data, string),
+    {Data3, Parameters} = decode_type(Data2, {prefixed_array, {enum, [sender, target, content]}}),
+    {Data4, Style} = decode_type(Data3, nbt),
+    {Data4, #chat_type{translation_key = TranslationKey, parameters = Parameters, style = Style}}.
+
+decode_player_info_update(Data) ->
+    {Data2, ActionsRec} = decode_type(Data, ubyte),
+    Actions = extract_value(ActionsRec),
+    {Data3, CountRec} = decode_type(Data2, varint),
+    Count = extract_value(CountRec),
+    {Data4, Players} = decode_player_info_entries(Data3, Count, Actions, []),
+    {Data4, #player_info_update{actions = ActionsRec, players = Players}}.
+
+decode_player_info_entries(Data, 0, _Actions, Acc) ->
+    {Data, lists:reverse(Acc)};
+decode_player_info_entries(Data, Count, Actions, Acc) ->
+    {Data2, UUIDRec} = decode_type(Data, uuid),
+    {Data3, PlayerActions} = decode_player_actions(Data2, Actions),
+    Entry = #player_info_entry{uuid = UUIDRec, actions = PlayerActions},
+    decode_player_info_entries(Data3, Count - 1, Actions, [Entry | Acc]).
+
+decode_player_actions(Data, Actions) ->
+    ActionBits = [
+        {16#01, fun decode_action_add_player/1},
+        {16#02, fun decode_action_initialize_chat/1},
+        {16#04, fun decode_action_update_game_mode/1},
+        {16#08, fun decode_action_update_listed/1},
+        {16#10, fun decode_action_update_latency/1},
+        {16#20, fun decode_action_update_display_name/1},
+        {16#40, fun decode_action_update_list_order/1}
+    ],
+    decode_player_actions_loop(Data, Actions, ActionBits, []).
+
+decode_player_actions_loop(Data, _Actions, [], Acc) ->
+    {Data, lists:reverse(Acc)};
+decode_player_actions_loop(Data, Actions, [{Bit, DecodeFun} | Rest], Acc) ->
+    case (Actions band Bit) =/= 0 of
+        true ->
+            {Data2, ActionVal} = DecodeFun(Data),
+            decode_player_actions_loop(Data2, Actions, Rest, [ActionVal | Acc]);
+        false ->
+            decode_player_actions_loop(Data, Actions, Rest, Acc)
+    end.
+
+decode_action_add_player(Data) ->
+    {Data2, NameRec} = decode_type(Data, string),
+    {Data3, PropsCountRec} = decode_type(Data2, varint),
+    Count = extract_value(PropsCountRec),
+    {Data4, Properties} = decode_properties(Data3, Count),
+    {Data4, {add_player, NameRec, Properties}}.
+
+decode_action_initialize_chat(Data) ->
+    {Data2, ChatSession} = decode_prefixed_optional(Data, [uuid, long, byte_array, byte_array]),
+    {Data2, {initialize_chat, ChatSession}}.
+
+decode_action_update_game_mode(Data) ->
+    {Data2, GameModeRec} = decode_type(Data, varint),
+    {Data2, {update_game_mode, GameModeRec}}.
+
+decode_action_update_listed(Data) ->
+    {Data2, ListedRec} = decode_type(Data, bool),
+    {Data2, {update_listed, ListedRec}}.
+
+decode_action_update_latency(Data) ->
+    {Data2, LatencyRec} = decode_type(Data, varint),
+    {Data2, {update_latency, LatencyRec}}.
+
+decode_action_update_display_name(Data) ->
+    {Data2, DisplayName} = decode_prefixed_optional(Data, json_text_component),
+    {Data2, {update_display_name, DisplayName}}.
+
+decode_action_update_list_order(Data) ->
+    {Data2, ListOrderRec} = decode_type(Data, varint),
+    {Data2, {update_list_order, ListOrderRec}}.
+
+decode_set_equipment(Data) ->
+    {Data2, EntityID} = decode_type(Data, varint),
+    {Data3, Equipment} = decode_equipment_list(Data2, []),
+    {Data3, #set_equipment{entity_id = EntityID, equipment = Equipment}}.
+
+decode_equipment_list(Data, Acc) ->
+    {Data2, #byte{byte = RawByte}} = decode_byte(Data),
+    UByte = RawByte band 16#FF,
+    HasNext = (UByte band 16#80) =/= 0,
+    SlotEnumVal = UByte band 16#7F,
+    {Data3, ItemSlot} = decode_type(Data2, slot),
+    Entry = {#enum{enum = SlotEnumVal}, ItemSlot},
+    NewAcc = [Entry | Acc],
+    case HasNext of
+        true ->
+            decode_equipment_list(Data3, NewAcc);
+        false ->
+            {Data3, lists:reverse(NewAcc)}
+    end.
+
+decode_set_objective(Data) ->
+    {Data2, NameRec} = decode_type(Data, string),
+    ObjectiveName = extract_value(NameRec),
+    {Data3, ModeRec} = decode_type(Data2, byte),
+    Mode = extract_value(ModeRec),
+    case Mode of
+        1 ->
+            {Data3, #set_objective{
+                objective_name = ObjectiveName,
+                mode = Mode,
+                objective_value = undefined,
+                type = undefined,
+                number_format = undefined
+            }};
+        _ when Mode =:= 0; Mode =:= 2 ->
+            {Data4, ObjectiveValue} = decode_type(Data3, text_component),
+            {Data5, TypeRec} = decode_type(Data4, {enum, varint}),
+            Type = extract_value(TypeRec),
+            {Data6, HasNumFormatRec} = decode_type(Data5, bool),
+            HasNumFormat = extract_value(HasNumFormatRec),
+            {Data7, NumberFormat} = case HasNumFormat of
+                true ->
+                    {Data6_1, FormatIDRec} = decode_type(Data6, {enum, varint}),
+                    FormatID = extract_value(FormatIDRec),
+                    case FormatID of
+                        0 ->
+                            {Data6_1, blank};
+                        1 ->
+                            {Data6_2, Styling} = decode_type(Data6_1, nbt),
+                            {Data6_2, {styled, Styling}};
+                        2 ->
+                            {Data6_2, Content} = decode_type(Data6_1, text_component),
+                            {Data6_2, {fixed, Content}};
+                        _ ->
+                            error({unknown_number_format_id, FormatID})
+                    end;
+                false ->
+                    {Data6, undefined}
+            end,
+            {Data7, #set_objective{
+                objective_name = ObjectiveName,
+                mode = Mode,
+                objective_value = ObjectiveValue,
+                type = Type,
+                number_format = NumberFormat
+            }};
+        _ ->
+            error({unknown_set_objective_mode, Mode})
+    end.
+
+decode_set_player_team(Data) ->
+    {Data2, NameRec} = decode_type(Data, string),
+    TeamName = extract_value(NameRec),
+    {Data3, MethodRec} = decode_type(Data2, byte),
+    Method = extract_value(MethodRec),
+    case Method of
+        0 ->
+            {Data4, TeamDisplayName} = decode_type(Data3, text_component),
+            {Data5, TeamPrefix} = decode_type(Data4, text_component),
+            {Data6, TeamSuffix} = decode_type(Data5, text_component),
+            {Data7, NameTagVisRec} = decode_type(Data6, {enum, varint}),
+            NameTagVis = extract_value(NameTagVisRec),
+            {Data8, CollisionRuleRec} = decode_type(Data7, {enum, varint}),
+            CollisionRule = extract_value(CollisionRuleRec),
+            {Data9, TeamColorRec} = decode_type(Data8, {enum, varint}),
+            TeamColor = extract_value(TeamColorRec),
+            {Data10, FriendlyFlagsRec} = decode_type(Data9, byte),
+            FriendlyFlags = extract_value(FriendlyFlagsRec),
+            {Data11, Entities} = decode_type(Data10, {prefixed_array, string}),
+            {Data11, #set_player_team{
+                team_name = TeamName,
+                method = Method,
+                team_display_name = TeamDisplayName,
+                team_prefix = TeamPrefix,
+                team_suffix = TeamSuffix,
+                name_tag_visibility = NameTagVis,
+                collision_rule = CollisionRule,
+                team_color = TeamColor,
+                friendly_flags = FriendlyFlags,
+                entities = Entities
+            }};
+        1 ->
+            {Data3, #set_player_team{
+                team_name = TeamName,
+                method = Method,
+                team_display_name = undefined,
+                team_prefix = undefined,
+                team_suffix = undefined,
+                name_tag_visibility = undefined,
+                collision_rule = undefined,
+                team_color = undefined,
+                friendly_flags = undefined,
+                entities = undefined
+            }};
+        2 ->
+            {Data4, TeamDisplayName} = decode_type(Data3, text_component),
+            {Data5, TeamPrefix} = decode_type(Data4, text_component),
+            {Data6, TeamSuffix} = decode_type(Data5, text_component),
+            {Data7, NameTagVisRec} = decode_type(Data6, {enum, varint}),
+            NameTagVis = extract_value(NameTagVisRec),
+            {Data8, CollisionRuleRec} = decode_type(Data7, {enum, varint}),
+            CollisionRule = extract_value(CollisionRuleRec),
+            {Data9, TeamColorRec} = decode_type(Data8, {enum, varint}),
+            TeamColor = extract_value(TeamColorRec),
+            {Data10, FriendlyFlagsRec} = decode_type(Data9, byte),
+            FriendlyFlags = extract_value(FriendlyFlagsRec),
+            {Data10, #set_player_team{
+                team_name = TeamName,
+                method = Method,
+                team_display_name = TeamDisplayName,
+                team_prefix = TeamPrefix,
+                team_suffix = TeamSuffix,
+                name_tag_visibility = NameTagVis,
+                collision_rule = CollisionRule,
+                team_color = TeamColor,
+                friendly_flags = FriendlyFlags,
+                entities = undefined
+            }};
+        3 ->
+            {Data4, Entities} = decode_type(Data3, {prefixed_array, string}),
+            {Data4, #set_player_team{
+                team_name = TeamName,
+                method = Method,
+                team_display_name = undefined,
+                team_prefix = undefined,
+                team_suffix = undefined,
+                name_tag_visibility = undefined,
+                collision_rule = undefined,
+                team_color = undefined,
+                friendly_flags = undefined,
+                entities = Entities
+            }};
+        4 ->
+            {Data4, Entities} = decode_type(Data3, {prefixed_array, string}),
+            {Data4, #set_player_team{
+                team_name = TeamName,
+                method = Method,
+                team_display_name = undefined,
+                team_prefix = undefined,
+                team_suffix = undefined,
+                name_tag_visibility = undefined,
+                collision_rule = undefined,
+                team_color = undefined,
+                friendly_flags = undefined,
+                entities = Entities
+            }};
+        _ ->
+            error({unknown_set_player_team_method, Method})
+    end.
+
+decode_waypoint_data(Data) ->
+    {Data2, WaypointTypeRec} = decode_type(Data, {enum, varint}),
+    WaypointType = extract_value(WaypointTypeRec),
+    case WaypointType of
+        0 ->
+            {Data2, #waypoint_data{waypoint_type = 0}};
+        1 ->
+            {Data3, XRec} = decode_type(Data2, varint),
+            {Data4, YRec} = decode_type(Data3, varint),
+            {Data5, ZRec} = decode_type(Data4, varint),
+            {Data5, #waypoint_data{
+                waypoint_type = 1,
+                x = extract_value(XRec),
+                y = extract_value(YRec),
+                z = extract_value(ZRec)
+            }};
+        2 ->
+            {Data3, XRec} = decode_type(Data2, varint),
+            {Data4, ZRec} = decode_type(Data3, varint),
+            {Data4, #waypoint_data{
+                waypoint_type = 2,
+                x = extract_value(XRec),
+                z = extract_value(ZRec)
+            }};
+        3 ->
+            {Data3, AngleRec} = decode_type(Data2, float),
+            {Data3, #waypoint_data{
+                waypoint_type = 3,
+                angle = extract_value(AngleRec)
+            }};
+        _ ->
+            error({unknown_waypoint_type, WaypointType})
+    end.
+
+decode_stop_sound(Data) ->
+    {Data2, FlagsRec} = decode_type(Data, byte),
+    Flags = extract_value(FlagsRec),
+    {Data3, Source} = case (Flags band 1) =/= 0 of
+        true ->
+            {D2, SRec} = decode_type(Data2, {enum, varint}),
+            {D2, extract_value(SRec)};
+        false ->
+            {Data2, undefined}
+    end,
+    {Data4, Sound} = case (Flags band 2) =/= 0 of
+        true ->
+            {D3, SndRec} = decode_type(Data3, identifier),
+            {D3, extract_value(SndRec)};
+        false ->
+            {Data3, undefined}
+    end,
+    {Data4, #stop_sound{
+        flags = Flags,
+        source = Source,
+        sound = Sound
+    }}.
+
+decode_set_score(Data) ->
+    {Data2, EntityNameRec} = decode_type(Data, string),
+    EntityName = extract_value(EntityNameRec),
+    {Data3, ObjectiveNameRec} = decode_type(Data2, string),
+    ObjectiveName = extract_value(ObjectiveNameRec),
+    {Data4, ValueRec} = decode_type(Data3, varint),
+    Value = extract_value(ValueRec),
+    {Data5, HasDisplayNameRec} = decode_type(Data4, bool),
+    HasDisplayName = extract_value(HasDisplayNameRec),
+    {Data6, DisplayName} = case HasDisplayName of
+        true ->
+            decode_type(Data5, text_component);
+        false ->
+            {Data5, undefined}
+    end,
+    {Data7, HasNumberFormatRec} = decode_type(Data6, bool),
+    HasNumberFormat = extract_value(HasNumberFormatRec),
+    {Data8, NumberFormat} = case HasNumberFormat of
+        true ->
+            {Data7_1, FormatIDRec} = decode_type(Data7, {enum, varint}),
+            FormatID = extract_value(FormatIDRec),
+            case FormatID of
+                0 ->
+                    {Data7_1, blank};
+                1 ->
+                    {Data7_2, Styling} = decode_type(Data7_1, nbt),
+                    {Data7_2, {styled, Styling}};
+                2 ->
+                    {Data7_2, Content} = decode_type(Data7_1, text_component),
+                    {Data7_2, {fixed, Content}};
+                _ ->
+                    error({unknown_number_format_id, FormatID})
+            end;
+        false ->
+            {Data7, undefined}
+    end,
+    {Data8, #set_score{
+        entity_name = EntityName,
+        objective_name = ObjectiveName,
+        value = Value,
+        display_name = DisplayName,
+        number_format = NumberFormat
+    }}.
+
+decode_update_advancements(Data) ->
+    {Data2, ResetRec}      = decode_type(Data,  bool),
+    Reset                   = extract_value(ResetRec),
+    {Data3, MappingRec}    = decode_type(Data2, {prefixed_array, [identifier, advancement]}),
+    AdvancementMapping      = MappingRec#prefixed_array.prefixed_array,
+    {Data4, IdentRec}      = decode_type(Data3, {prefixed_array, identifier}),
+    Identifiers             = IdentRec#prefixed_array.prefixed_array,
+    {Data5, ProgressRec}   = decode_type(Data4, {prefixed_array, [identifier, advancement_progress]}),
+    ProgressMapping         = ProgressRec#prefixed_array.prefixed_array,
+    {Data5, #update_advancements{
+        reset               = Reset,
+        advancement_mapping = AdvancementMapping,
+        identifiers         = Identifiers,
+        progress_mapping    = ProgressMapping
+    }}.
+
+decode_advancement(Data) ->
+    {Data2, ParentId}      = decode_type(Data,  {prefixed_optional, identifier}),
+    {Data3, HasDisplayRec} = decode_type(Data2, bool),
+    HasDisplay              = extract_value(HasDisplayRec),
+    {Data4, DisplayData}   = case HasDisplay of
+        true  -> decode_advancement_display(Data3);
+        false -> {Data3, none}
+    end,
+    {Data5, ReqRec}        = decode_type(Data4, {prefixed_array, {prefixed_array, string}}),
+    Requirements            = ReqRec#prefixed_array.prefixed_array,
+    {Data6, TelRec}        = decode_type(Data5, bool),
+    SendsTelemetry          = extract_value(TelRec),
+    {Data6, #advancement{
+        parent_id       = ParentId,
+        display_data    = DisplayData,
+        requirements    = Requirements,
+        sends_telemetry = SendsTelemetry
+    }}.
+
+decode_advancement_display(Data) ->
+    {Data2, TitleRec}      = decode_type(Data,  text_component),
+    {Data3, DescRec}       = decode_type(Data2, text_component),
+    {Data4, IconRec}       = decode_type(Data3, slot),
+    {Data5, FrameRec}      = decode_type(Data4, varint),
+    FrameType               = extract_value(FrameRec),
+    {Data6, FlagsRec}      = decode_type(Data5, int),
+    Flags                   = extract_value(FlagsRec),
+    {Data7, BgTexture}     = case (Flags band 16#01) =/= 0 of
+        true  ->
+            {D6, BgRec} = decode_type(Data6, identifier),
+            {D6, extract_value(BgRec)};
+        false ->
+            {Data6, undefined}
+    end,
+    {Data8, XRec}          = decode_type(Data7, float),
+    X                       = extract_value(XRec),
+    {Data9, YRec}          = decode_type(Data8, float),
+    Y                       = extract_value(YRec),
+    {Data9, #advancement_display{
+        title              = TitleRec,
+        description        = DescRec,
+        icon               = IconRec,
+        frame_type         = FrameType,
+        flags              = Flags,
+        background_texture = BgTexture,
+        x                  = X,
+        y                  = Y
+    }}.
+
+decode_advancement_progress(Data) ->
+    {Data2, CriteriaRec} = decode_type(Data, {prefixed_array, [identifier, {prefixed_optional, long}]}),
+    Criteria              = CriteriaRec#prefixed_array.prefixed_array,
+    {Data2, #advancement_progress{
+        criteria = Criteria
+    }}.

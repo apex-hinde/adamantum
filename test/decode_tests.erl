@@ -310,3 +310,277 @@ resolvable_profile_complete_test() ->
     ExpectedProfile = #game_profile{uuid = UUID, username = "Alex", properties = []},
     Expected = #resolvable_profile{profile_kind = 1, profile = ExpectedProfile, body = #optional{some = none, optional = none}, cape = #optional{some = none, optional = none}, elytra = #optional{some = none, optional = none}, model = #optional{some = none, optional = none}},
     ?assertEqual({<<"rest">>, Expected}, decode:decode_type(Input, TypeSpec)).
+
+lp_vec3_test() ->
+    ?assertEqual({<<>>, #lp_vec3{x = 0.0, y = 0.0, z = 0.0}}, decode:decode_type(<<0>>, lp_vec3)),
+    ?assertEqual({<<"rest">>, #lp_vec3{x = 0.0, y = 0.0, z = 0.0}}, decode:decode_type(<<0, "rest">>, lp_vec3)),
+    
+    Sample2Bin = <<241, 255, 0, 0, 255, 255, "rest">>,
+    {Rest2, #lp_vec3{x = X2, y = Y2, z = Z2}} = decode:decode_type(Sample2Bin, lp_vec3),
+    ?assertEqual(<<"rest">>, Rest2),
+    ?assert(abs(X2 - 1.0) < 0.001),
+    ?assert(abs(Y2 - 0.0) < 0.001),
+    ?assert(abs(Z2 - (-1.0)) < 0.001),
+
+    Sample3Bin = <<246, 255, 64, 1, 5, 31, 2, "rest">>,
+    {Rest3, #lp_vec3{x = X3, y = Y3, z = Z3}} = decode:decode_type(Sample3Bin, lp_vec3),
+    ?assertEqual(<<"rest">>, Rest3),
+    ?assert(abs(X3 - 10.0) < 0.05),
+    ?assert(abs(Y3 - 0.2) < 0.05),
+    ?assert(abs(Z3 - (-5.0)) < 0.05),
+
+    Sample4Bin = <<245, 255, 127, 255, 0, 7, 144, 241, 1, "rest">>,
+    {Rest4, #lp_vec3{x = X4, y = Y4, z = Z4}} = decode:decode_type(Sample4Bin, lp_vec3),
+    ?assertEqual(<<"rest">>, Rest4),
+    ?assert(abs(X4 - 123457.0) < 1.0),
+    ?assert(abs(Y4 - 15.071) < 0.1),
+    ?assert(abs(Z4 - 0.0) < 0.05),
+
+    ?assertEqual({error, "insufficient data"}, decode:decode_type(<<>>, lp_vec3)),
+    ?assertEqual({error, "insufficient data"}, decode:decode_type(<<246, 255, 64, 1, 5, 31>>, lp_vec3)).
+
+set_equipment_test() ->
+    EmptySlot = #slot{item_count = 0, itemID = undefined, components_to_add = [], components_to_remove = []},
+    Bin = <<1, 16#80, 0, 1, 0, "rest">>,
+    {Rest, Rec} = decode:decode_type(Bin, set_equipment),
+    ?assertEqual(<<"rest">>, Rest),
+    ?assertEqual(#varint{varint = 1}, Rec#set_equipment.entity_id),
+    ?assertEqual([
+        {#enum{enum = 0}, EmptySlot},
+        {#enum{enum = 1}, EmptySlot}
+    ], Rec#set_equipment.equipment).
+
+set_objective_test() ->
+    %% Mode 1: Remove objective
+    Mode1Rec = #set_objective{
+        objective_name = "test_obj",
+        mode = 1,
+        objective_value = undefined,
+        type = undefined,
+        number_format = undefined
+    },
+    Mode1Bin = encode:encode_type(Mode1Rec, set_objective),
+    {<<>>, DecMode1} = decode:decode_type(Mode1Bin, set_objective),
+    ?assertEqual("test_obj", DecMode1#set_objective.objective_name),
+    ?assertEqual(1, DecMode1#set_objective.mode),
+
+    %% Mode 0: Create objective (no number format)
+    Mode0Rec = #set_objective{
+        objective_name = "obj_0",
+        mode = 0,
+        objective_value = #{type => <<"text">>, text => <<"Title">>},
+        type = 0,
+        number_format = undefined
+    },
+    Mode0Bin = encode:encode_type(Mode0Rec, set_objective),
+    {<<>>, DecMode0} = decode:decode_type(Mode0Bin, set_objective),
+    ?assertEqual("obj_0", DecMode0#set_objective.objective_name),
+    ?assertEqual(0, DecMode0#set_objective.mode),
+    ?assertEqual(0, DecMode0#set_objective.type),
+    ?assertEqual(undefined, DecMode0#set_objective.number_format),
+
+    %% Mode 2: Update display text (blank number format)
+    Mode2Rec = #set_objective{
+        objective_name = "obj_2",
+        mode = 2,
+        objective_value = #{type => <<"text">>, text => <<"Updated">>},
+        type = 1,
+        number_format = blank
+    },
+    Mode2Bin = encode:encode_type(Mode2Rec, set_objective),
+    {<<>>, DecMode2} = decode:decode_type(Mode2Bin, set_objective),
+    ?assertEqual("obj_2", DecMode2#set_objective.objective_name),
+    ?assertEqual(2, DecMode2#set_objective.mode),
+    ?assertEqual(1, DecMode2#set_objective.type),
+    ?assertEqual(blank, DecMode2#set_objective.number_format).
+
+set_player_team_test() ->
+    %% Method 1: Remove team
+    Meth1Rec = #set_player_team{
+        team_name = "team_alpha",
+        method = 1
+    },
+    Meth1Bin = encode:encode_type(Meth1Rec, set_player_team),
+    {<<>>, DecMeth1} = decode:decode_type(Meth1Bin, set_player_team),
+    ?assertEqual("team_alpha", DecMeth1#set_player_team.team_name),
+    ?assertEqual(1, DecMeth1#set_player_team.method),
+
+    %% Method 0: Create team
+    Meth0Rec = #set_player_team{
+        team_name = "team_alpha",
+        method = 0,
+        team_display_name = #{type => <<"text">>, text => <<"Alpha">>},
+        team_prefix = #{type => <<"text">>, text => <<"[A] ">>},
+        team_suffix = #{type => <<"text">>, text => <<"">>},
+        name_tag_visibility = 0,
+        collision_rule = 0,
+        team_color = 12,
+        friendly_flags = 1,
+        entities = ["PlayerA"]
+    },
+    Meth0Bin = encode:encode_type(Meth0Rec, set_player_team),
+    {<<>>, DecMeth0} = decode:decode_type(Meth0Bin, set_player_team),
+    ?assertEqual("team_alpha", DecMeth0#set_player_team.team_name),
+    ?assertEqual(0, DecMeth0#set_player_team.method),
+    ?assertEqual(0, DecMeth0#set_player_team.name_tag_visibility),
+    ?assertEqual(0, DecMeth0#set_player_team.collision_rule),
+    ?assertEqual(12, DecMeth0#set_player_team.team_color),
+    ?assertEqual(1, DecMeth0#set_player_team.friendly_flags),
+
+    %% Method 2: Update team info
+    Meth2Rec = #set_player_team{
+        team_name = "team_alpha",
+        method = 2,
+        team_display_name = #{type => <<"text">>, text => <<"Alpha Team">>},
+        team_prefix = #{type => <<"text">>, text => <<"[Alpha] ">>},
+        team_suffix = #{type => <<"text">>, text => <<"">>},
+        name_tag_visibility = 1,
+        collision_rule = 2,
+        team_color = 5,
+        friendly_flags = 2
+    },
+    Meth2Bin = encode:encode_type(Meth2Rec, set_player_team),
+    {<<>>, DecMeth2} = decode:decode_type(Meth2Bin, set_player_team),
+    ?assertEqual("team_alpha", DecMeth2#set_player_team.team_name),
+    ?assertEqual(2, DecMeth2#set_player_team.method),
+    ?assertEqual(1, DecMeth2#set_player_team.name_tag_visibility),
+    ?assertEqual(2, DecMeth2#set_player_team.collision_rule),
+    ?assertEqual(5, DecMeth2#set_player_team.team_color),
+    ?assertEqual(2, DecMeth2#set_player_team.friendly_flags),
+
+    %% Method 3: Add entities
+    Meth3Rec = #set_player_team{
+        team_name = "team_alpha",
+        method = 3,
+        entities = ["PlayerB", "PlayerC"]
+    },
+    Meth3Bin = encode:encode_type(Meth3Rec, set_player_team),
+    {<<>>, DecMeth3} = decode:decode_type(Meth3Bin, set_player_team),
+    ?assertEqual("team_alpha", DecMeth3#set_player_team.team_name),
+    ?assertEqual(3, DecMeth3#set_player_team.method),
+
+    %% Method 4: Remove entities
+    Meth4Rec = #set_player_team{
+        team_name = "team_alpha",
+        method = 4,
+        entities = ["PlayerB"]
+    },
+    Meth4Bin = encode:encode_type(Meth4Rec, set_player_team),
+    {<<>>, DecMeth4} = decode:decode_type(Meth4Bin, set_player_team),
+    ?assertEqual("team_alpha", DecMeth4#set_player_team.team_name),
+    ?assertEqual(4, DecMeth4#set_player_team.method).
+
+waypoint_data_test() ->
+    %% 0: Empty
+    Rec0 = #waypoint_data{waypoint_type = 0},
+    Bin0 = encode:encode_type(Rec0, waypoint_data),
+    {<<>>, Dec0} = decode:decode_type(Bin0, waypoint_data),
+    ?assertEqual(0, Dec0#waypoint_data.waypoint_type),
+
+    %% 1: Vec3i
+    Rec1 = #waypoint_data{waypoint_type = 1, x = 123, y = 45, z = -678},
+    Bin1 = encode:encode_type(Rec1, waypoint_data),
+    {<<>>, Dec1} = decode:decode_type(Bin1, waypoint_data),
+    ?assertEqual(1, Dec1#waypoint_data.waypoint_type),
+    ?assertEqual(123, Dec1#waypoint_data.x),
+    ?assertEqual(45, Dec1#waypoint_data.y),
+    ?assertEqual(-678, Dec1#waypoint_data.z),
+
+    %% 2: Chunk
+    Rec2 = #waypoint_data{waypoint_type = 2, x = 10, z = -20},
+    Bin2 = encode:encode_type(Rec2, waypoint_data),
+    {<<>>, Dec2} = decode:decode_type(Bin2, waypoint_data),
+    ?assertEqual(2, Dec2#waypoint_data.waypoint_type),
+    ?assertEqual(10, Dec2#waypoint_data.x),
+    ?assertEqual(-20, Dec2#waypoint_data.z),
+
+    %% 3: Azimuth
+    Rec3 = #waypoint_data{waypoint_type = 3, angle = 3.14159},
+    Bin3 = encode:encode_type(Rec3, waypoint_data),
+    {<<>>, Dec3} = decode:decode_type(Bin3, waypoint_data),
+    ?assertEqual(3, Dec3#waypoint_data.waypoint_type),
+    ?assert(abs(3.14159 - Dec3#waypoint_data.angle) < 0.0001).
+
+stop_sound_test() ->
+    %% 0: Neither source nor sound
+    Rec0 = #stop_sound{flags = 0},
+    Bin0 = encode:encode_type(Rec0, stop_sound),
+    {<<>>, Dec0} = decode:decode_type(Bin0, stop_sound),
+    ?assertEqual(0, Dec0#stop_sound.flags),
+    ?assertEqual(undefined, Dec0#stop_sound.source),
+    ?assertEqual(undefined, Dec0#stop_sound.sound),
+
+    %% 1: Source only
+    Rec1 = #stop_sound{source = master},
+    Bin1 = encode:encode_type(Rec1, stop_sound),
+    {<<>>, Dec1} = decode:decode_type(Bin1, stop_sound),
+    ?assertEqual(1, Dec1#stop_sound.flags),
+    ?assertEqual(0, Dec1#stop_sound.source),
+    ?assertEqual(undefined, Dec1#stop_sound.sound),
+
+    %% 2: Sound only
+    Rec2 = #stop_sound{sound = <<"minecraft:ambient.cave">>},
+    Bin2 = encode:encode_type(Rec2, stop_sound),
+    {<<>>, Dec2} = decode:decode_type(Bin2, stop_sound),
+    ?assertEqual(2, Dec2#stop_sound.flags),
+    ?assertEqual(undefined, Dec2#stop_sound.source),
+    ?assertEqual("minecraft:ambient.cave", Dec2#stop_sound.sound),
+
+    %% 3: Source and Sound
+    Rec3 = #stop_sound{source = 7, sound = <<"minecraft:entity.generic.explode">>},
+    Bin3 = encode:encode_type(Rec3, stop_sound),
+    {<<>>, Dec3} = decode:decode_type(Bin3, stop_sound),
+    ?assertEqual(3, Dec3#stop_sound.flags),
+    ?assertEqual(7, Dec3#stop_sound.source),
+    ?assertEqual("minecraft:entity.generic.explode", Dec3#stop_sound.sound).
+
+set_score_test() ->
+    %% Minimal set_score
+    Rec0 = #set_score{
+        entity_name = "Player1",
+        objective_name = "kills",
+        value = 42
+    },
+    Bin0 = encode:encode_type(Rec0, set_score),
+    {<<>>, Dec0} = decode:decode_type(Bin0, set_score),
+    ?assertEqual("Player1", Dec0#set_score.entity_name),
+    ?assertEqual("kills", Dec0#set_score.objective_name),
+    ?assertEqual(42, Dec0#set_score.value),
+    ?assertEqual(undefined, Dec0#set_score.display_name),
+    ?assertEqual(undefined, Dec0#set_score.number_format),
+
+    %% set_score with display_name and blank number_format
+    DNVal = #{type => <<"text">>, text => <<"Player One">>},
+    Rec1 = #set_score{
+        entity_name = "Player1",
+        objective_name = "kills",
+        value = 100,
+        display_name = DNVal,
+        number_format = blank
+    },
+    Bin1 = encode:encode_type(Rec1, set_score),
+    {<<>>, Dec1} = decode:decode_type(Bin1, set_score),
+    ?assertEqual("Player1", Dec1#set_score.entity_name),
+    ?assertEqual("kills", Dec1#set_score.objective_name),
+    ?assertEqual(100, Dec1#set_score.value),
+    ?assertEqual(blank, Dec1#set_score.number_format),
+
+    %% set_score with fixed number_format
+    FixedContent = #{type => <<"text">>, text => <<"FixedVal">>},
+    Rec2 = #set_score{
+        entity_name = "Player2",
+        objective_name = "deaths",
+        value = 5,
+        display_name = undefined,
+        number_format = {fixed, FixedContent}
+    },
+    Bin2 = encode:encode_type(Rec2, set_score),
+    {<<>>, Dec2} = decode:decode_type(Bin2, set_score),
+    ?assertEqual("Player2", Dec2#set_score.entity_name),
+    ?assertEqual("deaths", Dec2#set_score.objective_name),
+    ?assertEqual(5, Dec2#set_score.value),
+    ?assertEqual(undefined, Dec2#set_score.display_name),
+    ?assertEqual({fixed, #text_component{component_map = FixedContent}}, Dec2#set_score.number_format).
+
+
+

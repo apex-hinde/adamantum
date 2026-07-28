@@ -149,7 +149,11 @@
     debug_subscription_type:: enum(varint())
     , data:: any()
 }).
--record(lp_vec3, {}). %%todo
+-record(lp_vec3, {
+    x :: float()
+    , y :: float()
+    , z :: float()
+}).
 
 
 
@@ -369,4 +373,113 @@
     , max_y
     , max_z
     , is_start
+}).
+
+
+%% custom packet records
+-record(seen_advancements, {type, action, tab_id}).
+-record(boss_bar, {
+    type
+    , uuid
+    , action
+    , title
+    , health
+    , color
+    , division
+    , flags
+}).
+-record(node, {
+    flags
+    , children_count
+    , children
+    , redirect_node
+    , name
+    , parser_id
+    , properties
+    , suggestions_type
+}).
+-record(delete_chat, {
+    message_id
+    , signature
+}).
+-record(chat_type, {
+    translation_key
+    , parameters
+    , style
+}).
+-record(player_info_update, {
+    actions
+    , players
+}).
+-record(player_info_entry, {
+    uuid
+    , actions
+}).
+-record(set_equipment, {
+    entity_id
+    , equipment
+}).
+-record(set_objective, {
+    objective_name
+    , mode
+    , objective_value
+    , type
+    , number_format
+}).
+-record(set_player_team, {
+    team_name
+    , method
+    , team_display_name
+    , team_prefix
+    , team_suffix
+    , name_tag_visibility
+    , collision_rule
+    , team_color
+    , friendly_flags
+    , entities
+}).
+-record(waypoint_data, {
+    waypoint_type
+    , x
+    , y
+    , z
+    , angle
+}).
+-record(stop_sound, {
+    flags
+    , source
+    , sound
+}).
+-record(set_score, {
+    entity_name
+    , objective_name
+    , value
+    , display_name
+    , number_format
+}).
+
+-record(update_advancements, {
+    reset
+    , advancement_mapping
+    , identifiers
+    , progress_mapping
+}).
+-record(advancement, {
+    parent_id
+    , display_data
+    , requirements
+    , sends_telemetry
+}).
+-record(advancement_display, {
+    title
+    , description
+    , icon
+    , frame_type
+    , flags
+    , background_texture
+    , x
+    , y
+}).
+-record(advancement_progress, {
+    criteria
 }).

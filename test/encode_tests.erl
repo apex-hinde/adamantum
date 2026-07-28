@@ -320,6 +320,253 @@ resolvable_profile_complete_test() ->
     ?assertEqual(ExpectedBin, encode:encode_type(Data, TypeSpec)),
     ?assertEqual(ExpectedBin, encode:encode_type(Data, resolvable_profile)).
 
+lp_vec3_test() ->
+    ?assertEqual(<<0>>, encode:encode_type(#lp_vec3{x = 0.0, y = 0.0, z = 0.0}, lp_vec3)),
+    ?assertEqual(<<0>>, encode:encode_type({0.0, 0.0, 0.0}, lp_vec3)),
+    ?assertEqual(<<0>>, encode:encode_type([0.0, 0.0, 0.0], lp_vec3)),
+    
+    Sample2Bin = <<241, 255, 0, 0, 255, 255>>,
+    ?assertEqual(Sample2Bin, encode:encode_type(#lp_vec3{x = 1.0, y = 0.0, z = -1.0}, lp_vec3)),
+    ?assertEqual(Sample2Bin, encode:encode_type({1.0, 0.0, -1.0}, lp_vec3)),
+
+    Sample3Bin = <<246, 255, 64, 1, 5, 31, 2>>,
+    ?assertEqual(Sample3Bin, encode:encode_type(#lp_vec3{x = 10.0, y = 0.2, z = -5.0}, lp_vec3)),
+
+    Sample4Bin = <<245, 255, 127, 255, 0, 7, 144, 241, 1>>,
+    ?assertEqual(Sample4Bin, encode:encode_type(#lp_vec3{x = 123457.0, y = 15.071, z = 0.0}, lp_vec3)).
+
+chat_type_test() ->
+    NbtVal = [{tag_compound, "", []}],
+    Rec = #chat_type{
+        translation_key = "chat.type.text",
+        parameters = [sender, content],
+        style = NbtVal
+    },
+    KeyBin = encode:encode_type("chat.type.text", string),
+    ParamsBin = encode:encode_type([sender, content], {prefixed_array, {enum, [sender, target, content]}}),
+    StyleBin = encode:encode_type(NbtVal, nbt),
+    ExpectedBin = <<KeyBin/binary, ParamsBin/binary, StyleBin/binary>>,
+    ?assertEqual(ExpectedBin, encode:encode_type(Rec, chat_type)).
+
+set_equipment_test() ->
+    EmptySlot = #slot{item_count = 0, itemID = undefined, components_to_add = [], components_to_remove = []},
+    Rec = #set_equipment{
+        entity_id = 1,
+        equipment = [
+            {0, EmptySlot},
+            {1, EmptySlot}
+        ]
+    },
+    EntityBin = encode:encode_type(1, varint),
+    Slot0Bin = encode:encode_type(16#80, byte),
+    Item0Bin = encode:encode_type(EmptySlot, slot),
+    Slot1Bin = encode:encode_type(1, byte),
+    Item1Bin = encode:encode_type(EmptySlot, slot),
+    ExpectedBin = <<EntityBin/binary, Slot0Bin/binary, Item0Bin/binary, Slot1Bin/binary, Item1Bin/binary>>,
+    ?assertEqual(ExpectedBin, encode:encode_type(Rec, set_equipment)).
+
+set_objective_test() ->
+    %% Test Mode 1 (Remove)
+    Rec1 = #set_objective{
+        objective_name = "obj1",
+        mode = 1
+    },
+    Name1Bin = encode:encode_type("obj1", string),
+    Mode1Bin = encode:encode_type(1, byte),
+    ?assertEqual(<<Name1Bin/binary, Mode1Bin/binary>>, encode:encode_type(Rec1, set_objective)),
+
+    %% Test Mode 0 (Create with no format)
+    Rec0 = #set_objective{
+        objective_name = "obj0",
+        mode = 0,
+        objective_value = #{type => <<"text">>, text => <<"Hello">>},
+        type = integer,
+        number_format = undefined
+    },
+    Name0Bin = encode:encode_type("obj0", string),
+    Mode0Bin = encode:encode_type(0, byte),
+    ValBin = encode:encode_type(#{type => <<"text">>, text => <<"Hello">>}, text_component),
+    TypeBin = encode:encode_type(0, {enum, varint}),
+    HasNFBin = encode:encode_type(false, bool),
+    ExpectedMode0Bin = <<Name0Bin/binary, Mode0Bin/binary, ValBin/binary, TypeBin/binary, HasNFBin/binary>>,
+    ?assertEqual(ExpectedMode0Bin, encode:encode_type(Rec0, set_objective)).
+
+set_player_team_test() ->
+    %% Method 1 (Remove team)
+    Rec1 = #set_player_team{
+        team_name = "red_team",
+        method = 1
+    },
+    Name1Bin = encode:encode_type("red_team", string),
+    Meth1Bin = encode:encode_type(1, byte),
+    ?assertEqual(<<Name1Bin/binary, Meth1Bin/binary>>, encode:encode_type(Rec1, set_player_team)),
+
+    %% Method 0 (Create team)
+    Rec0 = #set_player_team{
+        team_name = "blue_team",
+        method = 0,
+        team_display_name = #{type => <<"text">>, text => <<"Blue Team">>},
+        team_prefix = #{type => <<"text">>, text => <<"[Blue] ">>},
+        team_suffix = #{type => <<"text">>, text => <<" [Member]">>},
+        name_tag_visibility = always,
+        collision_rule = push_other_teams,
+        team_color = blue,
+        friendly_flags = 3,
+        entities = ["Player1", "Player2"]
+    },
+    Name0Bin = encode:encode_type("blue_team", string),
+    Meth0Bin = encode:encode_type(0, byte),
+    DispBin = encode:encode_type(#{type => <<"text">>, text => <<"Blue Team">>}, text_component),
+    PrefBin = encode:encode_type(#{type => <<"text">>, text => <<"[Blue] ">>}, text_component),
+    SuffBin = encode:encode_type(#{type => <<"text">>, text => <<" [Member]">>}, text_component),
+    VisBin = encode:encode_type(0, {enum, varint}),
+    CollBin = encode:encode_type(2, {enum, varint}),
+    ColBin = encode:encode_type(9, {enum, varint}),
+    FlagsBin = encode:encode_type(3, byte),
+    EntBin = encode:encode_type(["Player1", "Player2"], {prefixed_array, string}),
+    Expected0Bin = <<Name0Bin/binary, Meth0Bin/binary, DispBin/binary, PrefBin/binary, SuffBin/binary, VisBin/binary, CollBin/binary, ColBin/binary, FlagsBin/binary, EntBin/binary>>,
+    ?assertEqual(Expected0Bin, encode:encode_type(Rec0, set_player_team)),
+
+    %% Method 2 (Update team info)
+    Rec2 = #set_player_team{
+        team_name = "blue_team",
+        method = 2,
+        team_display_name = #{type => <<"text">>, text => <<"Blue Team Info">>},
+        team_prefix = #{type => <<"text">>, text => <<"">>},
+        team_suffix = #{type => <<"text">>, text => <<"">>},
+        name_tag_visibility = never,
+        collision_rule = never,
+        team_color = red,
+        friendly_flags = 1
+    },
+    Meth2Bin = encode:encode_type(2, byte),
+    Disp2Bin = encode:encode_type(#{type => <<"text">>, text => <<"Blue Team Info">>}, text_component),
+    Pref2Bin = encode:encode_type(#{type => <<"text">>, text => <<"">>}, text_component),
+    Suff2Bin = encode:encode_type(#{type => <<"text">>, text => <<"">>}, text_component),
+    Vis2Bin = encode:encode_type(1, {enum, varint}),
+    Coll2Bin = encode:encode_type(1, {enum, varint}),
+    Col2Bin = encode:encode_type(12, {enum, varint}),
+    Flags2Bin = encode:encode_type(1, byte),
+    Expected2Bin = <<Name0Bin/binary, Meth2Bin/binary, Disp2Bin/binary, Pref2Bin/binary, Suff2Bin/binary, Vis2Bin/binary, Coll2Bin/binary, Col2Bin/binary, Flags2Bin/binary>>,
+    ?assertEqual(Expected2Bin, encode:encode_type(Rec2, set_player_team)),
+
+    %% Method 3 (Add entities)
+    Rec3 = #set_player_team{
+        team_name = "red_team",
+        method = 3,
+        entities = ["Alex", "Steve"]
+    },
+    Meth3Bin = encode:encode_type(3, byte),
+    Ent3Bin = encode:encode_type(["Alex", "Steve"], {prefixed_array, string}),
+    Expected3Bin = <<Name1Bin/binary, Meth3Bin/binary, Ent3Bin/binary>>,
+    ?assertEqual(Expected3Bin, encode:encode_type(Rec3, set_player_team)),
+
+    %% Method 4 (Remove entities)
+    Rec4 = #set_player_team{
+        team_name = "red_team",
+        method = 4,
+        entities = ["Alex"]
+    },
+    Meth4Bin = encode:encode_type(4, byte),
+    Ent4Bin = encode:encode_type(["Alex"], {prefixed_array, string}),
+    Expected4Bin = <<Name1Bin/binary, Meth4Bin/binary, Ent4Bin/binary>>,
+    ?assertEqual(Expected4Bin, encode:encode_type(Rec4, set_player_team)).
+
+waypoint_data_test() ->
+    %% 0: Empty
+    Rec0 = #waypoint_data{waypoint_type = 0},
+    Expected0Bin = <<0:8>>,
+    ?assertEqual(Expected0Bin, encode:encode_type(Rec0, waypoint_data)),
+
+    %% 1: Vec3i
+    Rec1 = #waypoint_data{waypoint_type = 1, x = 100, y = 64, z = -200},
+    Type1Bin = encode:encode_type(1, {enum, varint}),
+    X1Bin = encode:encode_type(100, varint),
+    Y1Bin = encode:encode_type(64, varint),
+    Z1Bin = encode:encode_type(-200, varint),
+    Expected1Bin = <<Type1Bin/binary, X1Bin/binary, Y1Bin/binary, Z1Bin/binary>>,
+    ?assertEqual(Expected1Bin, encode:encode_type(Rec1, waypoint_data)),
+
+    %% 2: Chunk
+    Rec2 = #waypoint_data{waypoint_type = 2, x = 15, z = 30},
+    Type2Bin = encode:encode_type(2, {enum, varint}),
+    X2Bin = encode:encode_type(15, varint),
+    Z2Bin = encode:encode_type(30, varint),
+    Expected2Bin = <<Type2Bin/binary, X2Bin/binary, Z2Bin/binary>>,
+    ?assertEqual(Expected2Bin, encode:encode_type(Rec2, waypoint_data)),
+
+    %% 3: Azimuth
+    Rec3 = #waypoint_data{waypoint_type = 3, angle = 1.57},
+    Type3Bin = encode:encode_type(3, {enum, varint}),
+    AngleBin = encode:encode_type(1.57, float),
+    Expected3Bin = <<Type3Bin/binary, AngleBin/binary>>,
+    ?assertEqual(Expected3Bin, encode:encode_type(Rec3, waypoint_data)).
+
+stop_sound_test() ->
+    %% 0: Neither source nor sound
+    Rec0 = #stop_sound{flags = 0},
+    Expected0Bin = <<0:8>>,
+    ?assertEqual(Expected0Bin, encode:encode_type(Rec0, stop_sound)),
+
+    %% 1: Source only
+    Rec1 = #stop_sound{source = master},
+    Flags1Bin = <<1:8>>,
+    Source1Bin = encode:encode_type(0, {enum, varint}),
+    Expected1Bin = <<Flags1Bin/binary, Source1Bin/binary>>,
+    ?assertEqual(Expected1Bin, encode:encode_type(Rec1, stop_sound)),
+
+    %% 2: Sound only
+    Rec2 = #stop_sound{sound = <<"minecraft:ambient.cave">>},
+    Flags2Bin = <<2:8>>,
+    Sound2Bin = encode:encode_type(<<"minecraft:ambient.cave">>, identifier),
+    Expected2Bin = <<Flags2Bin/binary, Sound2Bin/binary>>,
+    ?assertEqual(Expected2Bin, encode:encode_type(Rec2, stop_sound)),
+
+    %% 3: Source and Sound
+    Rec3 = #stop_sound{source = player, sound = <<"minecraft:entity.generic.explode">>},
+    Flags3Bin = <<3:8>>,
+    Source3Bin = encode:encode_type(7, {enum, varint}),
+    Sound3Bin = encode:encode_type(<<"minecraft:entity.generic.explode">>, identifier),
+    Expected3Bin = <<Flags3Bin/binary, Source3Bin/binary, Sound3Bin/binary>>,
+    ?assertEqual(Expected3Bin, encode:encode_type(Rec3, stop_sound)).
+
+set_score_test() ->
+    %% Minimal set_score with optional fields undefined
+    Rec0 = #set_score{
+        entity_name = "Player1",
+        objective_name = "kills",
+        value = 42
+    },
+    EntityBin = encode:encode_type("Player1", string),
+    ObjectiveBin = encode:encode_type("kills", string),
+    ValueBin = encode:encode_type(42, varint),
+    NoDNBin = encode:encode_type(false, bool),
+    NoNFBin = encode:encode_type(false, bool),
+    Expected0Bin = <<EntityBin/binary, ObjectiveBin/binary, ValueBin/binary, NoDNBin/binary, NoNFBin/binary>>,
+    ?assertEqual(Expected0Bin, encode:encode_type(Rec0, set_score)),
+
+    %% set_score with display_name and styled number_format
+    DNVal = #{type => <<"text">>, text => <<"Player One">>},
+    StylingNBT = [{tag_compound, "", [{tag_string, "color", "red"}]}],
+    Rec1 = #set_score{
+        entity_name = "Player1",
+        objective_name = "kills",
+        value = 100,
+        display_name = DNVal,
+        number_format = {styled, StylingNBT}
+    },
+    DNBin = encode:encode_type(DNVal, text_component),
+    HasDNBin = encode:encode_type(true, bool),
+    HasNFBin = encode:encode_type(true, bool),
+    NFIdBin = encode:encode_type(1, {enum, varint}),
+    StylingBin = encode:encode_type(StylingNBT, nbt),
+    Expected1Bin = <<EntityBin/binary, ObjectiveBin/binary, (encode:encode_type(100, varint))/binary, HasDNBin/binary, DNBin/binary, HasNFBin/binary, NFIdBin/binary, StylingBin/binary>>,
+    ?assertEqual(Expected1Bin, encode:encode_type(Rec1, set_score)).
+
+
+
+
+
 
 
 

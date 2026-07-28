@@ -511,3 +511,666 @@ debug_subscription_update_test() ->
     %% Absent update (using {Type, none})
     EncAbsent = encode:encode_type({1, none}, debug_subscription_update),
     {<<>>, #prefixed_optional{some = none, prefixed_optional = none}} = decode:decode_type(EncAbsent, debug_subscription_update).
+
+lp_vec3_test() ->
+    TestVecs = [
+        #lp_vec3{x = 0.0, y = 0.0, z = 0.0},
+        #lp_vec3{x = 1.0, y = 0.0, z = -1.0},
+        #lp_vec3{x = 10.0, y = 0.2, z = -5.0},
+        #lp_vec3{x = 123457.0, y = 15.071, z = 0.0}
+    ],
+    lists:foreach(fun(#lp_vec3{x = X, y = Y, z = Z} = Vec) ->
+        Encoded = encode:encode_type(Vec, lp_vec3),
+        {<<>>, #lp_vec3{x = DecX, y = DecY, z = DecZ}} = decode:decode_type(Encoded, lp_vec3),
+        ?assert(abs(X - DecX) < 0.05),
+        ?assert(abs(Y - DecY) < 0.05),
+        ?assert(abs(Z - DecZ) < 0.05),
+        Encoded2 = encode:encode_type(#lp_vec3{x = DecX, y = DecY, z = DecZ}, lp_vec3),
+        ?assertEqual(Encoded, Encoded2)
+    end, TestVecs).
+
+seen_advancements_test() ->
+    Rec0 = #seen_advancements{action = 0, tab_id = "minecraft:story/root"},
+    Enc0 = encode:encode_type(Rec0, seen_advancements),
+    {<<>>, Dec0} = decode:decode_type(Enc0, seen_advancements),
+    Enc0_re = encode:encode_type(Dec0, seen_advancements),
+    ?assertEqual(Enc0, Enc0_re),
+
+    Rec1 = #seen_advancements{action = 1, tab_id = none},
+    Enc1 = encode:encode_type(Rec1, seen_advancements),
+    {<<>>, Dec1} = decode:decode_type(Enc1, seen_advancements),
+    Enc1_re = encode:encode_type(Dec1, seen_advancements),
+    ?assertEqual(Enc1, Enc1_re).
+
+boss_bar_test() ->
+    UUID = <<"1234567890123456">>,
+    BossBars = [
+        #boss_bar{uuid = UUID, action = 0, title = "Ender Dragon", health = 0.75, color = 1, division = 2, flags = 5},
+        #boss_bar{uuid = UUID, action = 1},
+        #boss_bar{uuid = UUID, action = 2, health = 0.5},
+        #boss_bar{uuid = UUID, action = 3, title = "Wither"},
+        #boss_bar{uuid = UUID, action = 4, color = 3, division = 1},
+        #boss_bar{uuid = UUID, action = 5, flags = 3}
+    ],
+    lists:foreach(fun(Rec) ->
+        Enc = encode:encode_type(Rec, boss_bar),
+        {<<>>, Dec} = decode:decode_type(Enc, boss_bar),
+        Enc_re = encode:encode_type(Dec, boss_bar),
+        {<<>>, Dec_re} = decode:decode_type(Enc_re, boss_bar),
+        ?assertEqual(Dec, Dec_re)
+    end, BossBars).
+
+node_test() ->
+    Nodes = [
+        %% Root Node
+        #node{flags = 0, children = [1, 2]},
+        %% Literal Node
+        #node{flags = 1, children = [3], name = "gamemode"},
+        %% Argument Node with Entity parser (ID 6)
+        #node{flags = 2, children = [], name = "target", parser_id = 6, properties = 1},
+        %% Argument Node with Float parser (ID 1) and Suggestions Type
+        #node{flags = 18, children = [], name = "amount", parser_id = 1, properties = {3, 0.0, 100.0}, suggestions_type = "minecraft:ask_server"},
+        %% Argument Node with Double parser (ID 2)
+        #node{flags = 2, children = [], name = "val", parser_id = 2, properties = {1, 1.5, none}},
+        %% Argument Node with Integer parser (ID 3)
+        #node{flags = 2, children = [], name = "count", parser_id = 3, properties = {2, none, 10}},
+        %% Argument Node with Long parser (ID 4)
+        #node{flags = 2, children = [], name = "ticks", parser_id = 4, properties = {0, none, none}},
+        %% Argument Node with String parser (ID 5)
+        #node{flags = 2, children = [], name = "msg", parser_id = 5, properties = 2},
+        %% Argument Node with Time parser (ID 23)
+        #node{flags = 2, children = [], name = "duration", parser_id = 23, properties = 20},
+        %% Argument Node with Resource tag parser (ID 24)
+        #node{flags = 2, children = [], name = "item", parser_id = 24, properties = "minecraft:item"},
+        %% Argument Node with Score Holder parser (ID 34)
+        #node{flags = 2, children = [], name = "objective", parser_id = 34, properties = 0},
+        %% Redirect Node
+        #node{flags = 8, children = [], redirect_node = 4},
+        %% Restricted Executable Literal Node (flags: 0x01 | 0x04 | 0x20 = 37)
+        #node{flags = 37, children = [], name = "admin"}
+    ],
+    lists:foreach(fun(Rec) ->
+        Enc = encode:encode_type(Rec, node),
+        {<<>>, Dec} = decode:decode_type(Enc, node),
+        Enc_re = encode:encode_type(Dec, node),
+        {<<>>, Dec_re} = decode:decode_type(Enc_re, node),
+        ?assertEqual(Enc, Enc_re),
+        ?assertEqual(Dec, Dec_re)
+    end, Nodes).
+
+
+delete_chat_test() ->
+    Sig256 = binary:copy(<<123:8>>, 256),
+
+    %% Case 1: Message ID = 0, Signature is present (256 bytes)
+    Rec0 = #delete_chat{message_id = 0, signature = Sig256},
+    Enc0 = encode:encode_type(Rec0, delete_chat),
+    ?assertEqual(257, byte_size(Enc0)),
+    {<<>>, Dec0} = decode:decode_type(Enc0, delete_chat),
+    ?assertEqual(#varint{varint = 0}, Dec0#delete_chat.message_id),
+    ?assertEqual(#optional{some = some, optional = #byte_array{byte_array = Sig256}}, Dec0#delete_chat.signature),
+
+    %% Re-encode decoded record
+    Enc0_re = encode:encode_type(Dec0, delete_chat),
+    ?assertEqual(Enc0, Enc0_re),
+    {<<>>, Dec0_re} = decode:decode_type(Enc0_re, delete_chat),
+    ?assertEqual(Dec0, Dec0_re),
+
+    %% Case 2: Message ID != 0 (e.g. 5), Signature is not present
+    Rec1 = #delete_chat{message_id = 5, signature = none},
+    Enc1 = encode:encode_type(Rec1, delete_chat),
+    ?assertEqual(1, byte_size(Enc1)),
+    {<<>>, Dec1} = decode:decode_type(Enc1, delete_chat),
+    ?assertEqual(#varint{varint = 5}, Dec1#delete_chat.message_id),
+    ?assertEqual(#optional{some = none, optional = none}, Dec1#delete_chat.signature),
+
+    %% Re-encode decoded record
+    Enc1_re = encode:encode_type(Dec1, delete_chat),
+    ?assertEqual(Enc1, Enc1_re),
+    {<<>>, Dec1_re} = decode:decode_type(Enc1_re, delete_chat),
+    ?assertEqual(Dec1, Dec1_re).
+
+chat_type_test() ->
+    NbtVal = [{tag_compound, "", []}],
+    Rec0 = #chat_type{
+        translation_key = "chat.type.text",
+        parameters = [sender, content],
+        style = NbtVal
+    },
+    Enc0 = encode:encode_type(Rec0, chat_type),
+    {<<>>, Dec0} = decode:decode_type(Enc0, chat_type),
+    ?assertEqual(#string{string = "chat.type.text"}, Dec0#chat_type.translation_key),
+    ?assertEqual(#prefixed_array{prefixed_array = [#enum{enum = sender}, #enum{enum = content}]}, Dec0#chat_type.parameters),
+    ?assertEqual(#nbt{nbt = NbtVal}, Dec0#chat_type.style),
+
+    %% Re-encode decoded record
+    Enc0_re = encode:encode_type(Dec0, chat_type),
+    ?assertEqual(Enc0, Enc0_re),
+    {<<>>, Dec0_re} = decode:decode_type(Enc0_re, chat_type),
+    ?assertEqual(Dec0, Dec0_re),
+
+    %% Case with tuple input and all 3 parameters
+    Rec1 = {"chat.type.emote", [sender, target, content], NbtVal},
+    Enc1 = encode:encode_type(Rec1, chat_type),
+    {<<>>, Dec1} = decode:decode_type(Enc1, chat_type),
+    ?assertEqual(#string{string = "chat.type.emote"}, Dec1#chat_type.translation_key),
+    ?assertEqual(#prefixed_array{prefixed_array = [#enum{enum = sender}, #enum{enum = target}, #enum{enum = content}]}, Dec1#chat_type.parameters),
+    ?assertEqual(#nbt{nbt = NbtVal}, Dec1#chat_type.style).
+
+player_info_update_test() ->
+    UUID1 = <<"1234567890123456">>,
+    UUID2 = <<"6543210987654321">>,
+
+    %% 1. Single action: Add Player (0x01)
+    AddPlayerAction = {add_player, "PlayerOne", [{"textures", "val1", "sig1"}]},
+    Rec1 = #player_info_update{
+        actions = 16#01,
+        players = [
+            #player_info_entry{uuid = UUID1, actions = [AddPlayerAction]}
+        ]
+    },
+    Enc1 = encode:encode_type(Rec1, player_info_update),
+    {<<>>, Dec1} = decode:decode_type(Enc1, player_info_update),
+    Enc1_re = encode:encode_type(Dec1, player_info_update),
+    {<<>>, Dec1_re} = decode:decode_type(Enc1_re, player_info_update),
+    ?assertEqual(Enc1, Enc1_re),
+    ?assertEqual(Dec1, Dec1_re),
+
+    %% 2. Single action: Initialize Chat (0x02) with signature data
+    ChatSessionSig = {UUID1, 1234567890, <<"pubkey">>, <<"keysig">>},
+    InitChatAction = {initialize_chat, {some, ChatSessionSig}},
+    Rec2 = #player_info_update{
+        actions = 16#02,
+        players = [#player_info_entry{uuid = UUID1, actions = [InitChatAction]}]
+    },
+    Enc2 = encode:encode_type(Rec2, player_info_update),
+    {<<>>, Dec2} = decode:decode_type(Enc2, player_info_update),
+    Enc2_re = encode:encode_type(Dec2, player_info_update),
+    {<<>>, Dec2_re} = decode:decode_type(Enc2_re, player_info_update),
+    ?assertEqual(Enc2, Enc2_re),
+    ?assertEqual(Dec2, Dec2_re),
+
+    %% 3. Single action: Update Game Mode (0x04)
+    GameModeAction = {update_game_mode, 1}, % Creative
+    Rec3 = #player_info_update{
+        actions = 16#04,
+        players = [#player_info_entry{uuid = UUID1, actions = [GameModeAction]}]
+    },
+    Enc3 = encode:encode_type(Rec3, player_info_update),
+    {<<>>, Dec3} = decode:decode_type(Enc3, player_info_update),
+    Enc3_re = encode:encode_type(Dec3, player_info_update),
+    {<<>>, Dec3_re} = decode:decode_type(Enc3_re, player_info_update),
+    ?assertEqual(Enc3, Enc3_re),
+    ?assertEqual(Dec3, Dec3_re),
+
+    %% 4. Single action: Update Listed (0x08)
+    ListedAction = {update_listed, true},
+    Rec4 = #player_info_update{
+        actions = 16#08,
+        players = [#player_info_entry{uuid = UUID1, actions = [ListedAction]}]
+    },
+    Enc4 = encode:encode_type(Rec4, player_info_update),
+    {<<>>, Dec4} = decode:decode_type(Enc4, player_info_update),
+    Enc4_re = encode:encode_type(Dec4, player_info_update),
+    {<<>>, Dec4_re} = decode:decode_type(Enc4_re, player_info_update),
+    ?assertEqual(Enc4, Enc4_re),
+    ?assertEqual(Dec4, Dec4_re),
+
+    %% 5. Single action: Update Latency (0x10)
+    LatencyAction = {update_latency, 42},
+    Rec5 = #player_info_update{
+        actions = 16#10,
+        players = [#player_info_entry{uuid = UUID1, actions = [LatencyAction]}]
+    },
+    Enc5 = encode:encode_type(Rec5, player_info_update),
+    {<<>>, Dec5} = decode:decode_type(Enc5, player_info_update),
+    Enc5_re = encode:encode_type(Dec5, player_info_update),
+    {<<>>, Dec5_re} = decode:decode_type(Enc5_re, player_info_update),
+    ?assertEqual(Enc5, Enc5_re),
+    ?assertEqual(Dec5, Dec5_re),
+
+    %% 6. Single action: Update Display Name (0x20)
+    DisplayNameAction = {update_display_name, {some, #{<<"text">> => <<"PlayerOne">>}}},
+    Rec6 = #player_info_update{
+        actions = 16#20,
+        players = [#player_info_entry{uuid = UUID1, actions = [DisplayNameAction]}]
+    },
+    Enc6 = encode:encode_type(Rec6, player_info_update),
+    {<<>>, Dec6} = decode:decode_type(Enc6, player_info_update),
+    Enc6_re = encode:encode_type(Dec6, player_info_update),
+    {<<>>, Dec6_re} = decode:decode_type(Enc6_re, player_info_update),
+    ?assertEqual(Enc6, Enc6_re),
+    ?assertEqual(Dec6, Dec6_re),
+
+    %% 7. Combined multiple actions (0x01 | 0x04 | 0x08 | 0x10 | 0x20 = 0x3D) and multiple players
+    CombinedActions = 16#01 bor 16#04 bor 16#08 bor 16#10 bor 16#20,
+    Player1Actions = [
+        {add_player, "Player1", []},
+        {update_game_mode, 0},
+        {update_listed, true},
+        {update_latency, 20},
+        {update_display_name, none}
+    ],
+    Player2Actions = [
+        {add_player, "Player2", [{"skin", "val2", none}]},
+        {update_game_mode, 2},
+        {update_listed, false},
+        {update_latency, 100},
+        {update_display_name, {some, #{<<"text">> => <<"P2">>}}}
+    ],
+    Rec7 = #player_info_update{
+        actions = CombinedActions,
+        players = [
+            #player_info_entry{uuid = UUID1, actions = Player1Actions},
+            #player_info_entry{uuid = UUID2, actions = Player2Actions}
+        ]
+    },
+    Enc7 = encode:encode_type(Rec7, player_info_update),
+    {<<>>, Dec7} = decode:decode_type(Enc7, player_info_update),
+    Enc7_re = encode:encode_type(Dec7, player_info_update),
+    {<<>>, Dec7_re} = decode:decode_type(Enc7_re, player_info_update),
+    ?assertEqual(Enc7, Enc7_re),
+    ?assertEqual(Dec7, Dec7_re).
+
+set_equipment_test() ->
+    EmptySlot = #slot{item_count = 0, itemID = undefined, components_to_add = [], components_to_remove = []},
+    ItemSlot = #slot{item_count = 1, itemID = 267, components_to_add = [], components_to_remove = []},
+    BootsSlot = #slot{item_count = 1, itemID = 313, components_to_add = [], components_to_remove = []},
+
+    %% 1. Single equipment item test
+    Rec1 = #set_equipment{
+        entity_id = 123,
+        equipment = [
+            {0, EmptySlot}
+        ]
+    },
+    Enc1 = encode:encode_type(Rec1, set_equipment),
+    {<<>>, Dec1} = decode:decode_type(Enc1, set_equipment),
+    ?assertEqual(#varint{varint = 123}, Dec1#set_equipment.entity_id),
+    ?assertEqual([{#enum{enum = 0}, EmptySlot}], Dec1#set_equipment.equipment),
+    Enc1_re = encode:encode_type(Dec1, set_equipment),
+    ?assertEqual(Enc1, Enc1_re),
+
+    %% 2. Multiple equipment items test
+    Rec2 = #set_equipment{
+        entity_id = 456,
+        equipment = [
+            {#enum{enum = 0}, ItemSlot},
+            {#byte{byte = 2}, BootsSlot},
+            {5, EmptySlot}
+        ]
+    },
+    Enc2 = encode:encode_type(Rec2, set_equipment),
+    {<<>>, Dec2} = decode:decode_type(Enc2, set_equipment),
+    ?assertEqual(#varint{varint = 456}, Dec2#set_equipment.entity_id),
+    ?assertEqual([
+        {#enum{enum = 0}, ItemSlot},
+        {#enum{enum = 2}, BootsSlot},
+        {#enum{enum = 5}, EmptySlot}
+    ], Dec2#set_equipment.equipment),
+    Enc2_re = encode:encode_type(Dec2, set_equipment),
+    ?assertEqual(Enc2, Enc2_re),
+
+    %% 3. Tuple input test
+    TupleRec = {789, [{0, ItemSlot}, {1, EmptySlot}]},
+    Enc3 = encode:encode_type(TupleRec, set_equipment),
+    {<<>>, Dec3} = decode:decode_type(Enc3, set_equipment),
+    ?assertEqual(#varint{varint = 789}, Dec3#set_equipment.entity_id),
+    ?assertEqual([
+        {#enum{enum = 0}, ItemSlot},
+        {#enum{enum = 1}, EmptySlot}
+    ], Dec3#set_equipment.equipment),
+    Enc3_re = encode:encode_type(Dec3, set_equipment),
+    ?assertEqual(Enc3, Enc3_re).
+
+set_objective_test() ->
+    TextVal = #{type => <<"text">>, text => <<"Scores">>},
+    FixedVal = #{type => <<"text">>, text => <<"100">>},
+    StylingTag = [{tag_compound, "", [{tag_string, "color", "red"}, {tag_byte, "bold", 1}]}],
+
+    Objectives = [
+        #set_objective{
+            objective_name = "obj_remove",
+            mode = 1
+        },
+        #set_objective{
+            objective_name = "obj_no_fmt",
+            mode = 0,
+            objective_value = TextVal,
+            type = 0,
+            number_format = undefined
+        },
+        #set_objective{
+            objective_name = "obj_blank_fmt",
+            mode = 0,
+            objective_value = TextVal,
+            type = 1,
+            number_format = blank
+        },
+        #set_objective{
+            objective_name = "obj_styled_fmt",
+            mode = 0,
+            objective_value = TextVal,
+            type = 0,
+            number_format = {styled, StylingTag}
+        },
+        #set_objective{
+            objective_name = "obj_fixed_fmt",
+            mode = 2,
+            objective_value = TextVal,
+            type = 1,
+            number_format = {fixed, FixedVal}
+        }
+    ],
+
+    lists:foreach(fun(Rec) ->
+        Enc = encode:encode_type(Rec, set_objective),
+        {<<>>, Dec} = decode:decode_type(Enc, set_objective),
+        Enc_re = encode:encode_type(Dec, set_objective),
+        {<<>>, Dec_re} = decode:decode_type(Enc_re, set_objective),
+        ?assertEqual(Dec, Dec_re),
+        ?assertEqual(Enc, Enc_re)
+    end, Objectives).
+
+set_player_team_test() ->
+    TextVal1 = #{type => <<"text">>, text => <<"Team Gold">>},
+    PrefixVal = #{type => <<"text">>, text => <<"[Gold] ">>},
+    SuffixVal = #{type => <<"text">>, text => <<" [VIP]">>},
+
+    Teams = [
+        #set_player_team{
+            team_name = "gold_team",
+            method = 1
+        },
+        #set_player_team{
+            team_name = "gold_team",
+            method = 0,
+            team_display_name = TextVal1,
+            team_prefix = PrefixVal,
+            team_suffix = SuffixVal,
+            name_tag_visibility = 0,
+            collision_rule = 3,
+            team_color = 6,
+            friendly_flags = 3,
+            entities = #prefixed_array{prefixed_array = [#string{string = "Alice"}, #string{string = "Bob"}]}
+        },
+        #set_player_team{
+            team_name = "gold_team",
+            method = 2,
+            team_display_name = TextVal1,
+            team_prefix = PrefixVal,
+            team_suffix = SuffixVal,
+            name_tag_visibility = 2,
+            collision_rule = 1,
+            team_color = 14,
+            friendly_flags = 0
+        },
+        #set_player_team{
+            team_name = "gold_team",
+            method = 3,
+            entities = #prefixed_array{prefixed_array = [#string{string = "Charlie"}]}
+        },
+        #set_player_team{
+            team_name = "gold_team",
+            method = 4,
+            entities = #prefixed_array{prefixed_array = [#string{string = "Alice"}]}
+        }
+    ],
+
+    lists:foreach(fun(Rec) ->
+        Enc = encode:encode_type(Rec, set_player_team),
+        {<<>>, Dec} = decode:decode_type(Enc, set_player_team),
+        Enc_re = encode:encode_type(Dec, set_player_team),
+        {<<>>, Dec_re} = decode:decode_type(Enc_re, set_player_team),
+        ?assertEqual(Dec, Dec_re),
+        ?assertEqual(Enc, Enc_re)
+    end, Teams).
+
+waypoint_data_test() ->
+    Waypoints = [
+        #waypoint_data{
+            waypoint_type = 0
+        },
+        #waypoint_data{
+            waypoint_type = 1,
+            x = 500,
+            y = 70,
+            z = -300
+        },
+        #waypoint_data{
+            waypoint_type = 2,
+            x = -32,
+            z = 64
+        },
+        #waypoint_data{
+            waypoint_type = 3,
+            angle = 2.71828
+        }
+    ],
+
+    lists:foreach(fun(Rec) ->
+        Enc = encode:encode_type(Rec, waypoint_data),
+        {<<>>, Dec} = decode:decode_type(Enc, waypoint_data),
+        Enc_re = encode:encode_type(Dec, waypoint_data),
+        {<<>>, Dec_re} = decode:decode_type(Enc_re, waypoint_data),
+        ?assertEqual(Dec, Dec_re),
+        ?assertEqual(Enc, Enc_re)
+    end, Waypoints).
+
+stop_sound_test() ->
+    Sounds = [
+        #stop_sound{
+            flags = 0
+        },
+        #stop_sound{
+            source = master
+        },
+        #stop_sound{
+            sound = <<"minecraft:ambient.cave">>
+        },
+        #stop_sound{
+            source = player,
+            sound = <<"minecraft:entity.generic.explode">>
+        }
+    ],
+
+    lists:foreach(fun(Rec) ->
+        Enc = encode:encode_type(Rec, stop_sound),
+        {<<>>, Dec} = decode:decode_type(Enc, stop_sound),
+        Enc_re = encode:encode_type(Dec, stop_sound),
+        {<<>>, Dec_re} = decode:decode_type(Enc_re, stop_sound),
+        ?assertEqual(Dec, Dec_re),
+        ?assertEqual(Enc, Enc_re)
+    end, Sounds).
+
+set_score_test() ->
+    Scores = [
+        #set_score{
+            entity_name = "Steve",
+            objective_name = "points",
+            value = 10
+        },
+        #set_score{
+            entity_name = "Alex",
+            objective_name = "points",
+            value = 20,
+            display_name = #{type => <<"text">>, text => <<"Alex Score">>},
+            number_format = blank
+        },
+        #set_score{
+            entity_name = "Player3",
+            objective_name = "health",
+            value = 100,
+            display_name = undefined,
+            number_format = {styled, [{tag_compound, "", [{tag_string, "color", "blue"}]}]}
+        },
+        #set_score{
+            entity_name = "Player4",
+            objective_name = "coins",
+            value = 50,
+            display_name = #{type => <<"text">>, text => <<"Coins">>},
+            number_format = {fixed, #{type => <<"text">>, text => <<"$$$">>}}
+        }
+    ],
+
+    lists:foreach(fun(Rec) ->
+        Enc = encode:encode_type(Rec, set_score),
+        {<<>>, Dec} = decode:decode_type(Enc, set_score),
+        Enc_re = encode:encode_type(Dec, set_score),
+        {<<>>, Dec_re} = decode:decode_type(Enc_re, set_score),
+        ?assertEqual(Dec, Dec_re),
+        ?assertEqual(Enc, Enc_re)
+    end, Scores).
+
+%% -----------------------------------------------------------------
+%% update_advancements tests
+%% -----------------------------------------------------------------
+
+update_advancements_test() ->
+    %% Helper: round-trip: encode→decode→encode→decode and compare stability of decoded records.
+    %% We compare Dec == Dec2 (second round-trip is stable) rather than Enc == Enc2, because
+    %% text_component encoding converts JSON keys to atom keys on decode, so the first
+    %% re-encode may produce SNBT rather than JSON (semantically equivalent but different bytes).
+    RoundTrip = fun(Rec) ->
+        Enc  = encode:encode_type(Rec, update_advancements),
+        {<<>>, Dec}  = decode:decode_type(Enc, update_advancements),
+        Enc2 = encode:encode_type(Dec, update_advancements),
+        {<<>>, Dec2} = decode:decode_type(Enc2, update_advancements),
+        Enc3 = encode:encode_type(Dec2, update_advancements),
+        ?assertEqual(Enc2, Enc3),
+        ?assertEqual(Dec,  Dec2)
+    end,
+
+    %% Stable text components (NBT maps re-encode identically)
+    TitleTC   = #{<<"text">> => <<"Mine Stone">>},
+    DescTC    = #{<<"text">> => <<"Mine stone using a pickaxe">>},
+    RootTC    = #{<<"text">> => <<"Root">>},
+    WelcomeTC = #{<<"text">> => <<"Welcome">>},
+    ChalTC    = #{<<"text">> => <<"Challenge">>},
+    DragonTC  = #{<<"text">> => <<"Defeat the Ender Dragon">>},
+
+    %% Case 1: Reset=true, no advancements, no identifiers, no progress
+    Rec1 = #update_advancements{
+        reset               = true,
+        advancement_mapping = [],
+        identifiers         = [],
+        progress_mapping    = []
+    },
+    RoundTrip(Rec1),
+
+    %% Case 2: Reset=false, one advancement without display data, no progress
+    Adv2 = #advancement{
+        parent_id       = none,
+        display_data    = none,
+        requirements    = [[<<"criterion_a">>, <<"criterion_b">>]],
+        sends_telemetry = false
+    },
+    Rec2 = #update_advancements{
+        reset               = false,
+        advancement_mapping = [{<<"minecraft:story/mine_stone">>, Adv2}],
+        identifiers         = [],
+        progress_mapping    = []
+    },
+    RoundTrip(Rec2),
+
+    %% Case 3: Advancement with parent and display data, no background texture (flags=0x02)
+    Display3 = #advancement_display{
+        title              = TitleTC,
+        description        = DescTC,
+        icon               = empty,
+        frame_type         = 0,
+        flags              = 16#02,
+        background_texture = undefined,
+        x                  = 1.5,
+        y                  = -2.0
+    },
+    Adv3 = #advancement{
+        parent_id       = {some, <<"minecraft:story/root">>},
+        display_data    = Display3,
+        requirements    = [[<<"minecraft:story/mine_stone">>]],
+        sends_telemetry = true
+    },
+    Rec3 = #update_advancements{
+        reset               = false,
+        advancement_mapping = [{<<"minecraft:story/mine_stone">>, Adv3}],
+        identifiers         = [],
+        progress_mapping    = []
+    },
+    RoundTrip(Rec3),
+
+    %% Case 4: Advancement display WITH background texture (flags=0x01)
+    Display4 = #advancement_display{
+        title              = RootTC,
+        description        = WelcomeTC,
+        icon               = empty,
+        frame_type         = 0,
+        flags              = 16#01,
+        background_texture = <<"minecraft:textures/gui/advancements/backgrounds/stone.png">>,
+        x                  = 0.0,
+        y                  = 0.0
+    },
+    Adv4 = #advancement{
+        parent_id       = none,
+        display_data    = Display4,
+        requirements    = [],
+        sends_telemetry = false
+    },
+    Rec4 = #update_advancements{
+        reset               = false,
+        advancement_mapping = [{<<"minecraft:story/root">>, Adv4}],
+        identifiers         = [],
+        progress_mapping    = []
+    },
+    RoundTrip(Rec4),
+
+    %% Case 5: identifiers to remove
+    Rec5 = #update_advancements{
+        reset               = false,
+        advancement_mapping = [],
+        identifiers         = [<<"minecraft:story/old_adv">>, <<"minecraft:end/removed">>],
+        progress_mapping    = []
+    },
+    RoundTrip(Rec5),
+
+    %% Case 6: Progress mapping — one criterion achieved, one not achieved
+    Progress6 = #advancement_progress{
+        criteria = [
+            {<<"minecraft:story/mine_stone">>,  {some, 1700000000000}},
+            {<<"minecraft:story/upgrade_tools">>, none}
+        ]
+    },
+    Rec6 = #update_advancements{
+        reset               = false,
+        advancement_mapping = [],
+        identifiers         = [],
+        progress_mapping    = [{<<"minecraft:story/mine_stone">>, Progress6}]
+    },
+    RoundTrip(Rec6),
+
+    %% Case 7: Full packet — advancement + identifiers + progress
+    Display7 = #advancement_display{
+        title              = ChalTC,
+        description        = DragonTC,
+        icon               = empty,
+        frame_type         = 1,
+        flags              = 16#04,
+        background_texture = undefined,
+        x                  = 5.0,
+        y                  = 3.0
+    },
+    Adv7 = #advancement{
+        parent_id       = {some, <<"minecraft:end/root">>},
+        display_data    = Display7,
+        requirements    = [[<<"minecraft:end/kill_dragon">>]],
+        sends_telemetry = true
+    },
+    Progress7 = #advancement_progress{
+        criteria = [{<<"minecraft:end/kill_dragon">>, {some, 1700000000001}}]
+    },
+    Rec7 = #update_advancements{
+        reset               = false,
+        advancement_mapping = [{<<"minecraft:end/kill_dragon">>, Adv7}],
+        identifiers         = [<<"minecraft:end/removed_adv">>],
+        progress_mapping    = [{<<"minecraft:end/kill_dragon">>, Progress7}]
+    },
+    RoundTrip(Rec7).
