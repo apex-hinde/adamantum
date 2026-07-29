@@ -582,5 +582,34 @@ set_score_test() ->
     ?assertEqual(undefined, Dec2#set_score.display_name),
     ?assertEqual({fixed, #text_component{component_map = FixedContent}}, Dec2#set_score.number_format).
 
+custom_payload_decode_test() ->
+    %% <<25, 2, 15, "minecraft:brand", 7, "vanilla">>
+    %% Length = 25 (varint), Packet ID = 2 (varint)
+    PayloadBin = <<15, "minecraft:brand", 7, "vanilla">>,
+    Rec = decode:decode_message(PayloadBin, 'minecraft:custom_payload'),
+    ?assertEqual("minecraft:brand", Rec#'minecraft:custom_payload'.channel),
+    ?assertEqual(<<7, "vanilla">>, Rec#'minecraft:custom_payload'.data).
+
+client_information_decode_test() ->
+    %% Example message: <<0, 5, 101, 110, 95, 117, 115, 16, 0, 1, 127, 1, 1, 1, 0>> with packet id (0)
+    %% Payload after packet ID 0: <<5, 101, 110, 95, 117, 115, 16, 0, 1, 127, 1, 1, 1, 0>>
+    Data = <<5, 101, 110, 95, 117, 115, 16, 0, 1, 127, 1, 1, 1, 0>>,
+    Expected = #'minecraft:client_information'{
+        locale = "en_us",
+        view_distance = 16,
+        chat_mode = 0,
+        chat_colors = true,
+        displayed_skin_parts = 127,
+        main_hand = 1,
+        enable_text_filtering = true,
+        allow_server_listings = true,
+        particle_status = 0
+    },
+    Rec = decode:decode_message(Data, 'minecraft:client_information'),
+    ?assertEqual(Expected, Rec),
+    {ok, dummy_state} = decode_messages:decode_message({'minecraft:client_information', Rec}, dummy_state).
+
+
+
 
 

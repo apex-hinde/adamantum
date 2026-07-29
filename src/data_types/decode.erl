@@ -1,6 +1,24 @@
 -module(decode).
--export([decode_type/2, decode_node/1, decode_boss_bar/1, decode_seen_advancements/1, decode_delete_chat/1, decode_chat_type/1, decode_player_info_update/1, decode_set_equipment/1, decode_set_objective/1, decode_set_player_team/1, decode_waypoint_data/1, decode_stop_sound/1, decode_set_score/1, decode_update_advancements/1]).
+-export([decode_type/2, decode_message/2, extract_value/1]).
 -include("src/data_types/records.hrl").
+
+decode_message(Data, Packet_name) ->
+    {_, Param_list} = data_packets:get_messages_serverbound(Packet_name),
+    Data2 = decode_message_list(Data, Param_list,  []),
+    Return = msg_to_record:msg_to_record({Packet_name, Data2}),
+    io:format("~p~n", [Return]),
+    Return.
+
+decode_message_list(<<>>, [], Acc) ->
+    lists:reverse(Acc);
+
+decode_message_list(Data, [], Acc) ->
+    {Data, Acc};
+decode_message_list(Data, [H|T],  Acc) ->
+    {Data2, Result} = decode_type(Data, H),
+    decode_message_list(Data2, T, [Result|Acc]).
+
+
 
 decode_type(Data, Type) ->
     case Type of
@@ -164,6 +182,7 @@ extract_value(#varint{varint = V}) -> V;
 extract_value(#varlong{varlong = V}) -> V;
 extract_value(#enum{enum = V}) -> extract_value(V);
 extract_value(#optional{optional = V}) -> extract_value(V);
+extract_value(#byte_array{byte_array = V}) -> V;
 extract_value(V) when not is_tuple(V) -> V;
 
 extract_value(V) -> V.

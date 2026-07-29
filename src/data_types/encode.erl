@@ -3,21 +3,36 @@
 
 -export([
 	 encode_type/2,
-	 encode_node/1,
-	 encode_boss_bar/1,
-	 encode_seen_advancements/1,
-	 encode_delete_chat/1,
-	 encode_chat_type/1,
-	 encode_player_info_update/1,
-	 encode_set_equipment/1,
-	 encode_set_objective/1,
-	 encode_set_player_team/1,
-	 encode_waypoint_data/1,
-	 encode_stop_sound/1,
-	 encode_set_score/1,
-	 encode_update_advancements/1
-	]).
+	 encode_message/3]).
 
+encode_message({_PacketName, DataList}, Packet_name, ServerState) ->
+    encode_message(DataList, Packet_name, ServerState);
+encode_message(Data, Packet_name, ServerState) ->
+    {_PacketName, Param_list} = data_packets:get_messages_clientbound(Packet_name),
+    Data2 = encode_message_list(Data, Param_list,  <<>>),
+    Packet_ID = case ServerState of
+        0 -> 
+            handshake:name_to_id(clientbound, Packet_name);
+        1 -> 
+            status:name_to_id(clientbound, Packet_name);
+        2 ->
+            login:name_to_id(clientbound, Packet_name);
+        3 ->
+            status:name_to_id(clientbound, Packet_name);
+        4 ->
+            configuration:name_to_id(clientbound, Packet_name);
+        5 ->
+            play:name_to_id(clientbound, Packet_name)
+    end,
+    Data3 = <<Packet_ID:8, Data2/binary>>,
+
+    Data3.
+encode_message_list([], _, Acc) ->
+    Acc;
+
+encode_message_list([Data|T_data], [H|T],  Acc) ->
+    Result = encode_type(Data, H),
+    encode_message_list(T_data, T, <<Acc/binary, Result/binary>>).
 
 encode_type(Data, Type) ->
     case Type of
@@ -792,6 +807,8 @@ encode_game_profile({UUID, Username, Properties}) ->
     CountBin = encode_varint(length(Properties)),
     PropertiesBin = encode_properties(Properties),
     <<UUIDBin/binary, UsernameBin/binary, CountBin/binary, PropertiesBin/binary>>.
+encode_properties([]) ->
+    <<>>;
 
 encode_properties(Properties) when is_list(Properties) ->
     iolist_to_binary([encode_property(Prop) || Prop <- Properties]).

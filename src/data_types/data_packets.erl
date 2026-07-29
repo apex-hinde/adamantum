@@ -1,4 +1,5 @@
 -module(data_packets).
+-export([get_messages_serverbound/1, get_messages_clientbound/1]).
 get_messages_serverbound(Id) ->
     case Id of 
         %%Handshake State
@@ -23,7 +24,7 @@ get_messages_serverbound(Id) ->
         
         %%Configuration State
         'minecraft:client_information' ->
-            {'minecraft:client_information', [string, byte, {enum, varint}, bool, ubyte, bool, bool, {enum, varint}]};
+            {'minecraft:client_information', [string, byte, {enum, varint}, bool, ubyte, {enum, varint}, bool, bool, {enum, varint}]};
         'minecraft:finish_configuration' ->
             {'minecraft:finish_configuration', []};
         'minecraft:keep_alive' ->
@@ -67,8 +68,6 @@ get_messages_serverbound(Id) ->
             {'minecraft:client_command', [{enum, varint}]};
         'minecraft:client_tick_end' ->
             {'minecraft:client_tick_end', []};
-        'minecraft:client_information' ->
-            {'minecraft:client_information', [string, byte, {enum, varint}, bool, ubyte, {enum, varint}, bool, bool, {enum, varint}]};
         'minecraft:command_suggestion' ->
             {'minecraft:command_suggestion', [varint, string]};
         'minecraft:configuration_acknowledged' ->
@@ -82,7 +81,7 @@ get_messages_serverbound(Id) ->
         'minecraft:container_slot_state_changed' ->
             {'minecraft:container_slot_state_changed', [varint, varint, bool]};
         'minecraft:custom_payload' ->
-            {'minecraft:custom_payload', [identifier, empty]};
+            {'minecraft:custom_payload', [identifier, byte_array]};
         'minecraft:debug_subscription_request' ->
             {'minecraft:debug_subscription_request', [{prefixed_array, varint}]};
         'minecraft:edit_book' ->
