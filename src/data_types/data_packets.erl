@@ -215,7 +215,7 @@ get_messages_clientbound(Id) ->
         'minecraft:update_enabled_features' ->
             {'minecraft:update_enabled_features', [{prefixed_array, identifier}]};
         'minecraft:update_tags' ->
-            {'minecraft:update_tags', [{prefixed_array, [identifier, {prefixed_array, tag}]}]};
+            {'minecraft:update_tags', [{prefixed_array, [identifier, {prefixed_array, [identifier, {prefixed_array, varint}]}]}]};
         'minecraft:select_known_packs' ->
             {'minecraft:select_known_packs', [{prefixed_array, [string, string, string]}]};
         'minecraft:custom_report_details' ->
@@ -312,7 +312,7 @@ get_messages_clientbound(Id) ->
         'minecraft:initialize_border' ->
             {'minecraft:initialize_border', [double, double, double, double, varlong, varint, varint, varint]};
         'minecraft:level_chunk_with_light' ->
-            {'minecraft:level_chunk_with_light', [int, int, {prefixed_array, [{enum, varint}, {prefixed_array, long}]}, {prefixed_array, byte}, {prefixed_array, [ubyte, short, varint, nbt]}, light_data]};
+            {'minecraft:level_chunk_with_light', [int, int, {prefixed_array, [varint, {prefixed_array, long}]}, {prefixed_array, byte}, {prefixed_array, [ubyte, short, varint, nbt]}, light_data]};
         'minecraft:level_event' ->
             {'minecraft:level_event', [int, position, int, bool]};
         'minecraft:level_particles' ->
@@ -320,7 +320,7 @@ get_messages_clientbound(Id) ->
         'minecraft:light_update' ->
             {'minecraft:light_update', [varint, varint, light_data]};
         'minecraft:login' ->
-            {'minecraft:login', [int, bool, {prefixed_array, identifier}, varint, varint, varint, bool, bool, bool, varint, identifier, long, ubyte, byte, bool, {prefixed_optional, [identifier, position]}, varint, varint, bool, bool]};
+            {'minecraft:login', [int, bool, {prefixed_array, identifier}, varint, varint, varint, bool, bool, bool, varint, identifier, long, ubyte, byte, bool, bool, {prefixed_optional, [identifier, position]}, varint, varint, bool, bool]};
         'minecraft:low_disk_space_warning' ->
             {'minecraft:low_disk_space_warning', []};
         'minecraft:map_item_data' ->

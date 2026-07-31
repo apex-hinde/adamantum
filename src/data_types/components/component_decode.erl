@@ -1,12 +1,12 @@
 -module(component_decode).
 
+-include("src/data_types/records.hrl").
+
+-include("src/data_types/components/component_records.hrl").
 -export([
 	 decode_component/2
 	]).
 
-
--include("src/data_types/components/component_records.hrl").
--include("src/data_types/records.hrl").
 
 decode_component(TypeId, BinData) when is_integer(TypeId), is_binary(BinData) ->
     Name = component_type_registry:id_to_name(TypeId),
@@ -543,8 +543,13 @@ decode_banner_pattern(Data) ->
     {Data3, #banner_pattern{type = 'minecraft:banner_pattern', asset_id = AssetId, translation_key = TranslationKey}}.
 
 decode_nbt_raw(Data) ->
-    case nbt:decode(Data) of
-        {Rest, Map} -> {Rest, Map};
+    NormalizedData = case Data of
+        <<_:8, 0:16, _/binary>> -> Data;
+        <<TagType:8, BinRest/binary>> when TagType =/= 0 -> <<TagType:8, 0:16, BinRest/binary>>;
+        _ -> Data
+    end,
+    case nbt:decode(NormalizedData) of
+        {RemData, Map} -> {RemData, Map};
         Map when is_list(Map) -> {<<>>, Map}
     end.
 

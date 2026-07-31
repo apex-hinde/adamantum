@@ -1,9 +1,8 @@
 -module(encode_tests).
--include_lib("eunit/include/eunit.hrl").
 -include("src/data_types/records.hrl").
+
 -include("src/data_types/components/component_records.hrl").
-
-
+-include_lib("eunit/include/eunit.hrl").
 bool_test() ->
     ?assertEqual(<<1>>, encode:encode_type(true, bool)),
     ?assertEqual(<<0>>, encode:encode_type(false, bool)).
@@ -85,8 +84,7 @@ uuid_test() ->
     ?assertEqual(UUIDBin, encode:encode_type(UUIDBin, uuid)).
 
 bitset_test() ->
-    ?assertEqual(<<1, 16#FF>>, encode:encode_type(-1, bitset)),
-    ?assertEqual(<<2, 1, 0>>, encode:encode_type(256, bitset)).
+    ?assertEqual(<<1, 0, 0, 0, 0, 0, 0, 1, 0>>, encode:encode_type(256, bitset)).
 
 fixed_bitset_test() ->
     ?assertEqual(<<8, 16#FF>>, encode:encode_type(-1, fixed_bitset)),
@@ -562,6 +560,42 @@ set_score_test() ->
     StylingBin = encode:encode_type(StylingNBT, nbt),
     Expected1Bin = <<EntityBin/binary, ObjectiveBin/binary, (encode:encode_type(100, varint))/binary, HasDNBin/binary, DNBin/binary, HasNFBin/binary, NFIdBin/binary, StylingBin/binary>>,
     ?assertEqual(Expected1Bin, encode:encode_type(Rec1, set_score)).
+
+player_send_message_after_test() ->
+    player:send_message_after(5, 'test_pkt_1', rec1),
+    receive
+        Msg1 -> ?assertEqual({send_message, 'test_pkt_1', rec1}, Msg1)
+    after 100 ->
+        ?assert(false)
+    end,
+
+    player:send_message_after('test_pkt_2', rec2, state),
+    receive
+        Msg2 -> ?assertEqual({send_message, 'test_pkt_2', rec2}, Msg2)
+    after 100 ->
+        ?assert(false)
+    end,
+
+    player:send_message_after(5, 'test_pkt_3', rec3, state),
+    receive
+        Msg3 -> ?assertEqual({send_message, 'test_pkt_3', rec3}, Msg3)
+    after 100 ->
+        ?assert(false)
+    end.
+
+select_known_packs_encode_test() ->
+    Rec = #'minecraft:select_known_packs'{known_packs = [["minecraft", "core", "1.21"]]},
+    {Enc, _} = player:encode_message('minecraft:select_known_packs', Rec, undefined),
+    ?assertEqual({'minecraft:select_known_packs', [[["minecraft", "core", "1.21"]]]}, Enc).
+
+set_chunk_cache_center_encode_test() ->
+    Rec = #'minecraft:set_chunk_cache_center'{chunk_x = 5, chunk_z = -10},
+    {Enc, _} = player:encode_message('minecraft:set_chunk_cache_center', Rec, undefined),
+    ?assertEqual({'minecraft:set_chunk_cache_center', [5, -10]}, Enc),
+    EncodedBytes = encode:encode_message(Enc, 'minecraft:set_chunk_cache_center', 5),
+    ?assertEqual(<<94, 5, 246, 255, 255, 255, 15>>, EncodedBytes).
+
+
 
 
 

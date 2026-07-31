@@ -1,9 +1,8 @@
 -module(encode_then_decode).
--include_lib("eunit/include/eunit.hrl").
 -include("src/data_types/records.hrl").
+
 -include("src/data_types/components/component_records.hrl").
-
-
+-include_lib("eunit/include/eunit.hrl").
 bool_test() ->
     {<<>>, #bool{bool = true}} = decode:decode_type(encode:encode_type(true, bool), bool),
     {<<>>, #bool{bool = false}} = decode:decode_type(encode:encode_type(false, bool), bool).
@@ -1174,3 +1173,59 @@ update_advancements_test() ->
         progress_mapping    = [{<<"minecraft:end/kill_dragon">>, Progress7}]
     },
     RoundTrip(Rec7).
+
+login_message_test() ->
+    LoginPacket = #'minecraft:login'{
+        entity_id = 123,
+        is_hardcore = false,
+        dimension_names = ["minecraft:overworld"],
+        max_players = 20,
+        view_distance = 10,
+        simulation_distance = 10,
+        reduced_debug_info = false,
+        enable_respawn_screen = true,
+        do_limited_crafting = false,
+        dimension_type = 0,
+        dimension_name = "minecraft:overworld",
+        hashed_seed = 12345,
+        game_mode = 0,
+        previous_game_mode = -1,
+        is_debug = false,
+        is_flat = false,
+        death_location = undefined,
+        portal_cooldown = 0,
+        sea_level = 63,
+        online_mode = false,
+        enforces_secure_chat = false
+    },
+    {EncodedMsg, _} = player:encode_message('minecraft:login', LoginPacket, undefined),
+    EncodedBytes = encode:encode_message(EncodedMsg, 'minecraft:login', 5),
+    <<_PacketId:8, Body/binary>> = EncodedBytes,
+    {_, ParamList} = data_packets:get_messages_clientbound('minecraft:login'),
+    {DecodedList, <<>>} = lists:mapfoldl(fun(Type, Rest) ->
+        {Rest2, Val} = decode:decode_type(Rest, Type),
+        {Val, Rest2}
+    end, Body, ParamList),
+    DecodedRecord = msg_to_record:msg_to_record({'minecraft:login', DecodedList}),
+    ?assertEqual(123, DecodedRecord#'minecraft:login'.entity_id),
+    ?assertEqual(false, DecodedRecord#'minecraft:login'.is_hardcore),
+    ?assertEqual(undefined, DecodedRecord#'minecraft:login'.death_location).
+
+game_event_message_test() ->
+    GameEventPacket = #'minecraft:game_event'{
+        event = 1,
+        value = 0.0
+    },
+    {EncodedMsg, _} = player:encode_message('minecraft:game_event', GameEventPacket, undefined),
+    ?assertEqual({'minecraft:game_event', [1, 0.0]}, EncodedMsg),
+    EncodedBytes = encode:encode_message(EncodedMsg, 'minecraft:game_event', 5),
+    <<_PacketId:8, Body/binary>> = EncodedBytes,
+    {_, ParamList} = data_packets:get_messages_clientbound('minecraft:game_event'),
+    {DecodedList, <<>>} = lists:mapfoldl(fun(Type, Rest) ->
+        {Rest2, Val} = decode:decode_type(Rest, Type),
+        {Val, Rest2}
+    end, Body, ParamList),
+    DecodedRecord = msg_to_record:msg_to_record({'minecraft:game_event', DecodedList}),
+    ?assertEqual(1, DecodedRecord#'minecraft:game_event'.event),
+    ?assert(abs(0.0 - DecodedRecord#'minecraft:game_event'.value) < 0.0001).
+

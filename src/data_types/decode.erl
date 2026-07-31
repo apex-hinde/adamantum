@@ -1,12 +1,11 @@
 -module(decode).
--export([decode_type/2, decode_message/2, extract_value/1]).
 -include("src/data_types/records.hrl").
 
+-export([decode_type/2, decode_message/2, extract_value/1]).
 decode_message(Data, Packet_name) ->
     {_, Param_list} = data_packets:get_messages_serverbound(Packet_name),
     Data2 = decode_message_list(Data, Param_list,  []),
     Return = msg_to_record:msg_to_record({Packet_name, Data2}),
-    io:format("~p~n", [Return]),
     Return.
 
 decode_message_list(<<>>, [], Acc) ->
@@ -182,13 +181,22 @@ extract_value(#varint{varint = V}) -> V;
 extract_value(#varlong{varlong = V}) -> V;
 extract_value(#enum{enum = V}) -> extract_value(V);
 extract_value(#optional{optional = V}) -> extract_value(V);
+extract_value(#prefixed_optional{some = some, prefixed_optional = V}) -> extract_value(V);
+extract_value(#prefixed_optional{some = none}) -> undefined;
 extract_value(#byte_array{byte_array = V}) -> V;
-extract_value(V) when not is_tuple(V) -> V;
-
+extract_value(#array{array = V}) -> [extract_value(Elem) || Elem <- V];
+extract_value(#prefixed_array{prefixed_array = V}) -> [extract_value(Elem) || Elem <- V];
+extract_value(V) when is_list(V) -> [extract_value(Elem) || Elem <- V];
+extract_value(V) when is_tuple(V) -> [extract_value(X) || X <- tuple_to_list(V)];
 extract_value(V) -> V.
 
 decode_nbt(Data) ->
-    case nbt:decode(Data) of
+    NormalizedData = case Data of
+        <<_:8, 0:16, _/binary>> -> Data;
+        <<TagType:8, BinRest/binary>> when TagType =/= 0 -> <<TagType:8, 0:16, BinRest/binary>>;
+        _ -> Data
+    end,
+    case nbt:decode(NormalizedData) of
         {Data2, Map} -> {Data2, #nbt{nbt = Map}};
         Map when is_list(Map) -> {<<>>, #nbt{nbt = Map}}
     end.
@@ -286,9 +294,22 @@ decode_uuid(Data) ->
     {Data2, #uuid{uuid = UUID}}.
 
 decode_bitset(Data) ->
-    {Data2, #varint{varint = Length}} = decode_varint(Data),
-    <<Bit_set:(Length*8)/signed-integer, Data3/binary>> = Data2,
-    {Data3, #bitset{bitset = Bit_set}}.
+    {Data2, #varint{varint = NumLongs}} = decode_varint(Data),
+    {Data3, Longs} = decode_bitset_longs(Data2, NumLongs, []),
+    BitSetVal = longs_to_int(Longs),
+    {Data3, #bitset{bitset = BitSetVal}}.
+
+decode_bitset_longs(Data, 0, Acc) ->
+    {Data, lists:reverse(Acc)};
+decode_bitset_longs(<<Word:64/big-signed-integer, Rest/binary>>, N, Acc) when N > 0 ->
+    decode_bitset_longs(Rest, N - 1, [Word | Acc]).
+
+longs_to_int([]) -> 0;
+longs_to_int(Longs) ->
+    [MSB | Rest] = lists:reverse(Longs),
+    lists:foldl(fun(Word, Acc) ->
+        (Acc bsl 64) bor (Word band 16#FFFFFFFFFFFFFFFF)
+    end, MSB, Rest).
 
 decode_fixed_bitset(Data) ->
     {Data2, #varint{varint = Length}} = decode_varint(Data),
@@ -405,9 +426,7 @@ decode_array_loop_list(Data, 0, _ElemList, Acc) ->
 decode_array_loop_list(Data, Count, ElemList, Acc) ->
     {DecodedFields, RestData} = lists:mapfoldl(
         fun(ElemType, AccData) ->
-            io:format("elem type~p~n", [ElemType]),
             {NewData, Elem} = decode_type(AccData, ElemType),
-            io:format("new data~p~n", [NewData]),
 
             {Elem, NewData}
         end,

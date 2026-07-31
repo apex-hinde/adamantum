@@ -13,8 +13,8 @@ start(_StartType, _StartArgs) ->
     application:start(ecli),
     ssl:start(),
     mnesia:start(),
-%%    chunk_manager:setup(),
-%%    chunk_manager:clear_chunk_table(),
+    world_manager:setup(),
+    world_manager:clear_chunk_table(),
 %%    player_manager:setup(),
 %%    player_manager:clear_player_table(),
     sup:start_link().

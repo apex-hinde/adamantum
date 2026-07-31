@@ -1,8 +1,8 @@
 -module(component_tests).
--include_lib("eunit/include/eunit.hrl").
--include("src/data_types/components/component_records.hrl").
 -include("src/data_types/records.hrl").
 
+-include("src/data_types/components/component_records.hrl").
+-include_lib("eunit/include/eunit.hrl").
 dye_color_sub_type_test() ->
     ?assertEqual(<<0>>, component_encode:encode_component('minecraft:dye', white)),
     ?assertEqual(<<14>>, component_encode:encode_component('minecraft:dye', red)),

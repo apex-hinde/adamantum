@@ -1,7 +1,7 @@
 -module(text_component_tests).
--include_lib("eunit/include/eunit.hrl").
 -include("src/data_types/records.hrl").
 
+-include_lib("eunit/include/eunit.hrl").
 string_shorthand_test() ->
     SNBT = <<"\"Hello world\"">>,
     Comp = text_component:decode(SNBT),

@@ -1,10 +1,9 @@
 -module(component_encode).
 
+-include("src/data_types/components/component_records.hrl").
 -export([
 	 encode_component/2
 	]).
--include("src/data_types/components/component_records.hrl").
-
 encode_component(TypeId, Data) when is_integer(TypeId) ->
     Name = component_type_registry:id_to_name(TypeId),
     encode(Name, Data);

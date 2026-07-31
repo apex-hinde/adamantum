@@ -1,5 +1,7 @@
 -module(text_component).
 
+-include("src/data_types/records.hrl").
+
 -export([
 	 decode/1,
 	 encode/1,
@@ -7,8 +9,6 @@
 	 to_snbt/1,
 	 from_snbt/1
 	]).
--include("src/data_types/records.hrl").
-
 -spec decode(term()) -> map().
 decode(Data) when is_binary(Data); is_list(Data) ->
     case is_string_or_binary(Data) of

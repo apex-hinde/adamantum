@@ -1,8 +1,8 @@
 -module(decode_tests).
--include_lib("eunit/include/eunit.hrl").
 -include("src/data_types/records.hrl").
--include("src/data_types/components/component_records.hrl").
 
+-include("src/data_types/components/component_records.hrl").
+-include_lib("eunit/include/eunit.hrl").
 bool_test() ->
     ?assertEqual({<<>>, #bool{bool = true}}, decode:decode_type(<<1>>, bool)),
     ?assertEqual({<<>>, #bool{bool = false}}, decode:decode_type(<<0>>, bool)),
@@ -106,9 +106,7 @@ uuid_test() ->
     ?assertEqual({<<"rest">>, #uuid{uuid = UUID}}, decode:decode_type(Input, uuid)).
 
 bitset_test() ->
-    Input1 = <<1, 16#FF, "rest">>,
-    ?assertEqual({<<"rest">>, #bitset{bitset = -1}}, decode:decode_type(Input1, bitset)),
-    Input2 = <<2, 1, 0, "rest">>,
+    Input2 = <<1, 0, 0, 0, 0, 0, 0, 1, 0, "rest">>,
     ?assertEqual({<<"rest">>, #bitset{bitset = 256}}, decode:decode_type(Input2, bitset)).
 
 fixed_bitset_test() ->
@@ -607,7 +605,23 @@ client_information_decode_test() ->
     },
     Rec = decode:decode_message(Data, 'minecraft:client_information'),
     ?assertEqual(Expected, Rec),
-    {ok, dummy_state} = decode_messages:decode_message({'minecraft:client_information', Rec}, dummy_state).
+    {ok, dummy_state} = player:minecraft_client_information(Rec, dummy_state).
+
+select_known_packs_decode_test() ->
+    %% Empty known packs
+    RecEmpty = decode:decode_message(<<0>>, 'minecraft:select_known_packs'),
+    ?assertEqual(#'minecraft:select_known_packs'{known_packs = []}, RecEmpty),
+
+    %% 1 known pack: ["minecraft", "core", "1.21"]
+    Data = <<1, 9, "minecraft", 4, "core", 4, "1.21">>,
+    Rec = decode:decode_message(Data, 'minecraft:select_known_packs'),
+    Expected = #'minecraft:select_known_packs'{known_packs = [["minecraft", "core", "1.21"]]},
+    ?assertEqual(Expected, Rec).
+
+finish_configuration_decode_test() ->
+    Rec = decode:decode_message(<<>>, 'minecraft:finish_configuration'),
+    ?assertEqual(#'minecraft:finish_configuration'{}, Rec).
+
 
 
 

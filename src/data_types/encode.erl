@@ -33,7 +33,7 @@ encode_message_list([], _, Acc) ->
 encode_message_list([Data|T_data], [H|T],  Acc) ->
     Result = encode_type(Data, H),
     encode_message_list(T_data, T, <<Acc/binary, Result/binary>>).
-
+-spec encode_type(any(), atom()) -> binary().
 encode_type(Data, Type) ->
     case Type of
         bool ->
@@ -130,8 +130,8 @@ encode_type(Data, Type) ->
         {either_x_or_y, TypeX, TypeY} ->
             encode_either_x_or_y(Data, TypeX, TypeY);
 
-	    %%        light_data ->
-	    %%            encode_light_data(Data);
+        light_data ->
+            encode_light_data(Data);
         game_profile ->
             encode_game_profile(Data);
         resolvable_profile ->
@@ -276,13 +276,16 @@ encode_uuid(UUID) when is_list(UUID) ->
     list_to_binary(UUID).
 
 encode_bitset(#bitset{bitset = BitSet}) -> encode_bitset(BitSet);
-encode_bitset({Length, BitSet}) when is_integer(Length), is_integer(BitSet) ->
-    LenBin = encode_varint(Length),
-    <<LenBin/binary, BitSet:(Length*8)/signed-integer>>;
+encode_bitset({NumLongs, BitSet}) when is_integer(NumLongs), is_integer(BitSet) ->
+    LenBin = encode_varint(NumLongs),
+    LongsBin = encode_bitset_longs(BitSet, NumLongs),
+    <<LenBin/binary, LongsBin/binary>>;
 encode_bitset(BitSet) when is_integer(BitSet) ->
-    Length = calc_bitset_bytes(BitSet),
-    LenBin = encode_varint(Length),
-    <<LenBin/binary, BitSet:(Length*8)/signed-integer>>.
+    Longs = calc_bitset_longs(BitSet),
+    NumLongs = length(Longs),
+    LenBin = encode_varint(NumLongs),
+    LongsBin = list_to_binary([<<W:64/big-unsigned-integer>> || W <- Longs]),
+    <<LenBin/binary, LongsBin/binary>>.
 
 encode_fixed_bitset(#fixed_bitset{fixed_bitset = BitSet}) -> encode_fixed_bitset(BitSet);
 encode_fixed_bitset({Bits, BitSet}) when is_integer(Bits), is_integer(BitSet) ->
@@ -310,22 +313,22 @@ encode_byte_array(Data, PrefixType) when is_atom(PrefixType) ->
     <<LenBin/binary, Bin/binary>>.
 
 
-calc_bitset_bytes(Val) when Val >= 0 ->
-    calc_bitset_bytes(Val, 1);
-calc_bitset_bytes(Val) when Val < 0 ->
-    calc_bitset_bytes_neg(Val, 1).
+calc_bitset_longs(0) -> [];
+calc_bitset_longs(Val) when is_integer(Val), Val > 0 ->
+    Word = Val band 16#FFFFFFFFFFFFFFFF,
+    [Word | calc_bitset_longs(Val bsr 64)];
+calc_bitset_longs(Val) when is_integer(Val), Val < 0 ->
+    Word = Val band 16#FFFFFFFFFFFFFFFF,
+    [Word].
 
-calc_bitset_bytes(Val, Bytes) ->
-    Max = (1 bsl (Bytes * 8 - 1)) - 1,
-    if Val =< Max -> Bytes;
-       true -> calc_bitset_bytes(Val, Bytes + 1)
-    end.
+encode_bitset_longs(_BitSet, 0) -> <<>>;
+encode_bitset_longs(BitSet, NumLongs) when NumLongs > 0 ->
+    encode_bitset_longs_loop(BitSet, NumLongs, 0, <<>>).
 
-calc_bitset_bytes_neg(Val, Bytes) ->
-    Min = -(1 bsl (Bytes * 8 - 1)),
-    if Val >= Min -> Bytes;
-       true -> calc_bitset_bytes_neg(Val, Bytes + 1)
-    end.
+encode_bitset_longs_loop(_BitSet, NumLongs, NumLongs, Acc) -> Acc;
+encode_bitset_longs_loop(BitSet, NumLongs, Shift, Acc) ->
+    Word = (BitSet bsr (Shift * 64)) band 16#FFFFFFFFFFFFFFFF,
+    encode_bitset_longs_loop(BitSet, NumLongs, Shift + 1, <<Acc/binary, Word:64/big-unsigned-integer>>).
 
 calc_fixed_bitset_bits(Val) when Val >= 0 ->
     calc_fixed_bitset_bits(Val, 8);
@@ -419,6 +422,8 @@ encode_prefixed_array(#prefixed_array{prefixed_array = List}, ElemType) ->
 encode_prefixed_array(#array{array = List}, ElemType) ->
     encode_prefixed_array(List, ElemType);
 
+encode_prefixed_array(Bin, _ElemType) when is_binary(Bin) ->
+    Bin;
 encode_prefixed_array(List, ElemType) when is_list(List) ->
     LenBin = encode_varint(length(List)),
     ArrayBin = encode_array_loop(List, ElemType, <<>>),
@@ -1124,10 +1129,34 @@ debug_subscription_type_id(neighbor_update) -> 14;
 debug_subscription_type_id(game_event) -> 15;
 debug_subscription_type_id(#{type := Type}) -> debug_subscription_type_id(Type).
 
-encode_nbt(#nbt{nbt = NbtVal}) ->
-    nbt:encode(NbtVal);
 encode_nbt(Data) ->
-    nbt:encode(Data).
+    RawBin = case Data of
+        #nbt{nbt = NbtVal} -> nbt:encode(NbtVal);
+        _ -> nbt:encode(Data)
+    end,
+    case RawBin of
+        <<TagType:8, 0:16, Rest/binary>> ->
+            <<TagType:8, Rest/binary>>;
+        _ ->
+            RawBin
+    end.
+
+encode_light_data(#light_data{
+    sky_light_mask = SkyMask,
+    block_light_mask = BlockMask,
+    empty_sky_light_mask = EmptySkyMask,
+    empty_block_light_mask = EmptyBlockMask,
+    sky_light_arrays = SkyArrays,
+    block_light_arrays = BlockArrays
+}) ->
+    SkyMaskEnc = encode_bitset(SkyMask),
+    BlockMaskEnc = encode_bitset(BlockMask),
+    EmptySkyMaskEnc = encode_bitset(EmptySkyMask),
+    EmptyBlockMaskEnc = encode_bitset(EmptyBlockMask),
+    SkyArraysEnc = encode_type(SkyArrays, {prefixed_array, {prefixed_array, byte}}),
+    BlockArraysEnc = encode_type(BlockArrays, {prefixed_array, {prefixed_array, byte}}),
+    <<SkyMaskEnc/binary, BlockMaskEnc/binary, EmptySkyMaskEnc/binary, EmptyBlockMaskEnc/binary, SkyArraysEnc/binary, BlockArraysEnc/binary>>.
+
 
 extract_val(#varint{varint = V}) -> extract_val(V);
 extract_val(#varlong{varlong = V}) -> extract_val(V);
@@ -1376,6 +1405,8 @@ encode_chat_type({TranslationKey, Parameters, Style}) ->
 
 encode_player_info_update(#player_info_update{actions = Actions, players = Players}) ->
     encode_player_info_update(Actions, Players);
+encode_player_info_update(#'minecraft:player_info_update'{actions = Actions, players = Players}) ->
+    encode_player_info_update(Actions, Players);
 encode_player_info_update({Actions, Players}) ->
     encode_player_info_update(Actions, Players).
 
@@ -1393,6 +1424,10 @@ encode_player_info_entry(#player_info_entry{uuid = UUID, actions = Actions}, Act
 encode_player_info_entry({UUID, Actions}, ActionsMask) ->
     UUIDBin = encode_type(UUID, uuid),
     ActionsBin = encode_player_actions(Actions, ActionsMask),
+    <<UUIDBin/binary, ActionsBin/binary>>;
+encode_player_info_entry(UUID, ActionsMask) when is_binary(UUID) ->
+    UUIDBin = encode_type(UUID, uuid),
+    ActionsBin = encode_player_actions([], ActionsMask),
     <<UUIDBin/binary, ActionsBin/binary>>.
 
 encode_player_actions(ActionsList, ActionsMask) ->
