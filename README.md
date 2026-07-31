@@ -7,5 +7,5 @@ Build
 $ rebar3 compile
 $ rebar3 shell
 ```
-then run minecraft 1.21.4 
+then run minecraft 26.2 
 press on multiplayer then direct connect with the server adress localhost
