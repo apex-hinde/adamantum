@@ -27,12 +27,15 @@ start_link() ->
 %%                  modules => modules()}   % optional
 init([]) ->
     {ok, {{one_for_all, 0, 1},[
+					{pg,
+						{pg, start_link, [minecraft_players]},
+						permanent, 5000, worker, [pg]},
 			       {world_manager,
-				{world_manager, start_link, []},
-				permanent, 5000, worker, [world_manager]},
+						{world_manager, start_link, []},
+						permanent, 5000, worker, [world_manager]},
 			       {listen,
-				{listen, start_link, [listen, {25565}]},
-				permanent, brutal_kill, worker, [listen]}
+						{listen, start_link, [listen, {25565}]},
+						permanent, brutal_kill, worker, [listen]}
 			      ]}}.
 
 %% internal functions

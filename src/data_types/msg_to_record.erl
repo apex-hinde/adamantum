@@ -85,6 +85,18 @@ msg_to_record(Msg) ->
             };
         {'minecraft:client_tick_end', []} ->
             #'minecraft:client_tick_end'{};
+        {'minecraft:player_input', [Flags]} ->
+            Val = decode:extract_value(Flags),
+            #'minecraft:player_input'{
+                forward = (Val band 16#01) =/= 0,
+                backward = (Val band 16#02) =/= 0,
+                left = (Val band 16#04) =/= 0,
+                right = (Val band 16#08) =/= 0,
+                jump = (Val band 16#10) =/= 0,
+                sneak = (Val band 16#20) =/= 0,
+                sprint = (Val band 16#40) =/= 0,
+                flags = Val
+            };
         {'minecraft:game_event', [Event, Value]} ->
             Event2 = decode:extract_value(Event),
             Value2 = decode:extract_value(Value),

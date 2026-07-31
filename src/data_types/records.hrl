@@ -684,3 +684,82 @@
 
 -record('minecraft:player_loaded', {}).
 
+-record('minecraft:move_entity_pos_rot', {
+    entity_id :: varint()
+    , delta_x :: short()
+    , delta_y :: short()
+    , delta_z :: short()
+    , yaw :: float()
+    , pitch :: float()
+    , on_ground :: boolean()
+}).
+
+-record('minecraft:move_entity_pos', {
+    entity_id :: varint()
+    , delta_x :: short()
+    , delta_y :: short()
+    , delta_z :: short()
+    , on_ground :: boolean()
+}).
+
+-record('minecraft:move_entity_rot', {
+    entity_id :: varint()
+    , yaw :: float()
+    , pitch :: float()
+    , on_ground :: boolean()
+}).
+
+-record('minecraft:add_entity', {
+    entity_id :: varint()
+    , uuid :: uuid()
+    , type :: varint()
+    , x :: double()
+    , y :: double()
+    , z :: double()
+    , velocity = #lp_vec3{x = 0.0, y = 0.0, z = 0.0} :: #lp_vec3{} | {float(), float(), float()}
+    , pitch = 0.0 :: float()
+    , yaw = 0.0 :: float()
+    , head_yaw = 0.0 :: float()
+    , data = 0 :: varint()
+}).
+
+-record('minecraft:remove_entities', {
+    entity_ids = [] :: list(varint())
+}).
+
+-record('minecraft:rotate_head', {
+    entity_id :: varint()
+    , head_yaw :: float()
+}).
+
+-record('minecraft:player_input', {
+    forward = false :: boolean()
+    , backward = false :: boolean()
+    , left = false :: boolean()
+    , right = false :: boolean()
+    , jump = false :: boolean()
+    , sneak = false :: boolean()
+    , sprint = false :: boolean()
+    , flags = 0 :: ubyte()
+}).
+
+-record('minecraft:teleport_entity', {
+    entity_id :: varint()
+    , x :: double()
+    , y :: double()
+    , z :: double()
+    , vx = 0.0 :: double()
+    , vy = 0.0 :: double()
+    , vz = 0.0 :: double()
+    , yaw = 0.0 :: float()
+    , pitch = 0.0 :: float()
+    , flags = 0 :: integer()
+    , on_ground = false :: boolean()
+}).
+
+
+
+
+
+
+

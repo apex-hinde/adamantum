@@ -248,8 +248,9 @@ decode_identifier(Data) ->
     {Data1, #identifier{identifier = String}}.
 
 decode_angle(Data) ->
-    <<Angle:8/signed-integer, Data2/binary>> = Data,
-    {Data2, #angle{angle = Angle}}.
+    <<AngleByte:8/signed-integer, Data2/binary>> = Data,
+    DegAngle = AngleByte * 360.0 / 256.0,
+    {Data2, #angle{angle = DegAngle}}.
 
 decode_varint(Data) when is_binary(Data) ->
     decode_varint(Data, 0, 0).

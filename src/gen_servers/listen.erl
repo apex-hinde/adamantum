@@ -24,6 +24,10 @@ handle_call(stop, _From, State) ->
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
+handle_cast(connected, State) ->
+    player:start_link(self(), State#state.ls),
+    {noreply, State};
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

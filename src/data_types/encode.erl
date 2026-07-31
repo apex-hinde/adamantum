@@ -263,9 +263,10 @@ encode_position({X, Z, Y}) when is_integer(X), is_integer(Z), is_integer(Y) ->
 
 encode_angle(#angle{angle = Angle}) -> encode_angle(Angle);
 encode_angle(Angle) when is_integer(Angle) ->
-    encode_byte(Angle);
+    encode_angle(float(Angle));
 encode_angle(Angle) when is_float(Angle) ->
-    encode_byte(trunc(Angle)).
+    ByteVal = trunc(Angle * 256.0 / 360.0),
+    encode_byte(ByteVal).
 
 encode_uuid(#uuid{uuid = UUID}) -> encode_uuid(UUID);
 encode_uuid(<<UUID:128/bitstring>>) ->

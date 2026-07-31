@@ -24,13 +24,17 @@
     queue,
     state_of_play,
     uuid,
+    username,
     keep_alive,
     teleport_id,
     chunk_managers = [],
     render_distance = 12,
     current_chunk = {0,0},
-    player_data
-
+    player_data,
+    entity_id,
+    pending_state_updates = #{},
+    pending_events = [],
+    loaded_entities = sets:new()
 }).
 
 %% api
@@ -71,7 +75,7 @@ send_chunk_to_player(ChunkX, ChunkZ, State) ->
 
 
 start_link(Listen_pid, Listen_socket) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [Listen_pid, Listen_socket], []).
+    gen_server:start_link(?MODULE, [Listen_pid, Listen_socket], []).
 
 init([Listen_pid, Listen_socket]) ->
     self() ! run_accept,
@@ -79,8 +83,17 @@ init([Listen_pid, Listen_socket]) ->
             listen_socket = Listen_socket,
             queue = <<>>,
             state_of_play = ?HANDSHAKE,
-            player_data = #player_position{}}}.
+            player_data = #player_position{},
+            loaded_entities = sets:new()}}.
 
+terminate(_Reason, #state{current_chunk = {ChunkX, ChunkZ}, entity_id = EntityId, render_distance = R}) when is_integer(EntityId) ->
+    ChunkCoords = [{X, Z} || X <- lists:seq(ChunkX - R, ChunkX + R), Z <- lists:seq(ChunkZ - R, ChunkZ + R)],
+    SelfPid = self(),
+    lists:foreach(fun({CX, CZ}) ->
+        NearbyPids = pg:get_members(minecraft_players, {chunk, CX, CZ}),
+        [Pid ! {nearby_event, {event, player_left_view, {SelfPid, EntityId}}} || Pid <- NearbyPids, Pid /= SelfPid]
+    end, ChunkCoords),
+    ok;
 terminate(_Reason, _State) ->
     ok.
 
@@ -135,7 +148,39 @@ handle_info({tcp_closed, _Socket}, State) ->
     {stop, normal, State};
 
 handle_info({tcp_error, _Socket, _Reason}, State) ->
-    {stop, normal, State}.
+    {stop, normal, State};
+
+handle_info({nearby_event, Event}, State) ->
+    handle_nearby_event(Event, State);
+
+handle_info(tick, State = #state{state_of_play = ?PLAY}) ->
+    erlang:send_after(50, self(), tick),
+    StateUpdates = maps:values(State#state.pending_state_updates),
+    Events = State#state.pending_events,
+    AllPackets = StateUpdates ++ Events,
+    case AllPackets of
+        [] -> 
+            {noreply, State};
+        _ ->
+            {BatchBinaries, FinalState} = lists:foldl(
+                fun({PacketName, Record}, {BinAcc, CurrentState}) ->
+                    {Encoded, NextState} = encode_message(PacketName, Record, CurrentState),
+                    Message = encode:encode_message(Encoded, PacketName, CurrentState#state.state_of_play),
+                    Length = encode:encode_type(byte_size(Message), varint),
+                    Frame = <<Length/binary, Message/binary>>,
+                    {[Frame | BinAcc], NextState}
+                end,
+                {[], State},
+                AllPackets
+            ),
+            gen_tcp:send(State#state.player_socket, iolist_to_binary(lists:reverse(BatchBinaries))),
+            {noreply, FinalState#state{pending_state_updates = #{}, pending_events = []}}
+    end;
+handle_info(tick, State) ->
+    erlang:send_after(50, self(), tick),
+    {noreply, State}.
+
+
 
 message(Data, State) ->
     {Data2, Length2} = decode:decode_type(Data, varint),
@@ -267,6 +312,8 @@ decode_message(Data, State) ->
             minecraft_move_player_status_only(Record, State);
         {'minecraft:player_loaded', _Record} ->
             {ok, State};
+        {'minecraft:player_input', Record} ->
+            minecraft_player_input(Record, State);
         _ ->
             io:format("Error: Unknown message type, decode: ~p~n", [Data]),
             {ok, State}
@@ -309,7 +356,10 @@ minecraft_hello(Record, State) ->
         profile = Profile},
      {ok, NewState} = player:send_message('minecraft:login_finished', Response, State),
 
-    {ok, NewState#state{uuid = Record#'minecraft:hello_serverbound'.uuid}}.
+    {ok, NewState#state{
+        uuid = Record#'minecraft:hello_serverbound'.uuid,
+        username = Record#'minecraft:hello_serverbound'.name
+    }}.
 minecraft_login_acknowledged(_Record, State) ->
     NewState = State#state{state_of_play = ?CONFIGURATION},
     KnownPacks = [["minecraft", "core", "26.2"]],
@@ -330,9 +380,11 @@ minecraft_client_information(_Record, State) ->
     {ok, State}.
 
 minecraft_finish_configuration(_Record, State) ->
-    NewState = State#state{state_of_play = ?PLAY},
+    EntityId = erlang:unique_integer([positive]),
+    NewState = State#state{state_of_play = ?PLAY, entity_id = EntityId},
+    self() ! tick,
     LoginPacket = #'minecraft:login'{
-        entity_id = 1,
+        entity_id = EntityId,
         is_hardcore = false,
         dimension_names = ["minecraft:overworld"],
         max_players = 20,
@@ -370,13 +422,29 @@ minecraft_finish_configuration(_Record, State) ->
         flags = 0
     },
     {ok, NewState4} = player:send_message('minecraft:player_position', PlayerPosition, NewState3),
+    Username = case NewState4#state.username of undefined -> "Player"; U -> U end,
     PlayerInfo = #'minecraft:player_info_update'{
-        actions = 0,
-        players = [NewState4#state.uuid]
+        actions = 1,
+        players = [{NewState4#state.uuid, [{add_player, Username, []}]}]
     },
     {ok, NewState5} = player:send_message('minecraft:player_info_update', PlayerInfo, NewState4),
     {ok, NewState6} = player:send_message('minecraft:set_chunk_cache_center', #'minecraft:set_chunk_cache_center'{chunk_x = 0, chunk_z = 0}, NewState5),
     {ok, NewState7} = send_surrounding_chunks(0, 0, 12, NewState6),
+    ChunkX = pos_to_chunk_coord(NewState4#state.player_data#player_position.x),
+    ChunkZ = pos_to_chunk_coord(NewState4#state.player_data#player_position.z),
+
+    InitialChunks = [{X, Z} || 
+        X <- lists:seq(
+            ChunkX - NewState4#state.render_distance,
+            ChunkX + NewState4#state.render_distance), 
+        Z <- lists:seq(
+            ChunkZ - NewState4#state.render_distance, 
+            ChunkZ + NewState4#state.render_distance)],
+    lists:foreach(fun({X, Z}) ->
+        pg:join(minecraft_players, {chunk, X, Z}, self()),
+        broadcast_to_nearby(X, Z, {event, player_entered_view, {self(), NewState7#state.entity_id, NewState7#state.uuid, Username, NewState7#state.player_data}})
+    end, InitialChunks),
+    
     {ok, NewState7}.
 
 minecraft_accept_teleportation(Record, State) ->
@@ -385,41 +453,148 @@ minecraft_accept_teleportation(Record, State) ->
 minecraft_move_player_pos(Record, State) ->
     CurrentPos = State#state.player_data,
     Flags = Record#'minecraft:move_player_pos'.flags,
+    NewX = Record#'minecraft:move_player_pos'.x,
+    NewY = Record#'minecraft:move_player_pos'.y,
+    NewZ = Record#'minecraft:move_player_pos'.z,
+    OnGround = (Flags band 16#01) =/= 0,
+
     NewPos = CurrentPos#player_position{
-        x = Record#'minecraft:move_player_pos'.x,
-        y = Record#'minecraft:move_player_pos'.y,
-        z = Record#'minecraft:move_player_pos'.z,
-        on_ground = (Flags band 16#01) =/= 0,
+        x = NewX,
+        y = NewY,
+        z = NewZ,
+        on_ground = OnGround,
         touching_wall = (Flags band 16#02) =/= 0
     },
-    check_and_update_chunks(Record#'minecraft:move_player_pos'.x, Record#'minecraft:move_player_pos'.z, State),
-    {ok, State#state{player_data = NewPos}}.
+    {ok, State2} = check_and_update_chunks(NewX, NewZ, State),
+
+    DeltaX = trunc((NewX * 32.0 - CurrentPos#player_position.x * 32.0) * 128.0),
+    DeltaY = trunc((NewY * 32.0 - CurrentPos#player_position.y * 32.0) * 128.0),
+    DeltaZ = trunc((NewZ * 32.0 - CurrentPos#player_position.z * 32.0) * 128.0),
+
+    ChunkX = pos_to_chunk_coord(NewX),
+    ChunkZ = pos_to_chunk_coord(NewZ),
+    IsTooFar = (DeltaX > 32767) orelse (DeltaX < -32768) orelse
+               (DeltaY > 32767) orelse (DeltaY < -32768) orelse
+               (DeltaZ > 32767) orelse (DeltaZ < -32768),
+    if
+        IsTooFar ->
+            TeleportRecord = #'minecraft:teleport_entity'{
+                entity_id = State2#state.entity_id,
+                x = NewX, y = NewY, z = NewZ,
+                vx = 0.0, vy = 0.0, vz = 0.0,
+                yaw = CurrentPos#player_position.yaw,
+                pitch = CurrentPos#player_position.pitch,
+                flags = 0, on_ground = OnGround
+            },
+            broadcast_to_nearby(ChunkX, ChunkZ, {state_update, State2#state.entity_id, 'minecraft:teleport_entity', TeleportRecord});
+        true ->
+            MoveRecord = #'minecraft:move_entity_pos'{
+                entity_id = State2#state.entity_id,
+                delta_x = DeltaX,
+                delta_y = DeltaY,
+                delta_z = DeltaZ,
+                on_ground = OnGround
+            },
+            broadcast_to_nearby(ChunkX, ChunkZ, {state_update, State2#state.entity_id, 'minecraft:move_entity_pos', MoveRecord})
+    end,
+
+    {ok, State2#state{player_data = NewPos}}.
 
 minecraft_move_player_pos_rot(Record, State) ->
     CurrentPos = State#state.player_data,
     Flags = Record#'minecraft:move_player_pos_rot'.flags,
+    NewX = Record#'minecraft:move_player_pos_rot'.x,
+    NewY = Record#'minecraft:move_player_pos_rot'.y,
+    NewZ = Record#'minecraft:move_player_pos_rot'.z,
+    Yaw = Record#'minecraft:move_player_pos_rot'.yaw,
+    Pitch = Record#'minecraft:move_player_pos_rot'.pitch,
+    OnGround = (Flags band 16#01) =/= 0,
+
     NewPos = CurrentPos#player_position{
-        x = Record#'minecraft:move_player_pos_rot'.x,
-        y = Record#'minecraft:move_player_pos_rot'.y,
-        z = Record#'minecraft:move_player_pos_rot'.z,
-        yaw = Record#'minecraft:move_player_pos_rot'.yaw,
-        pitch = Record#'minecraft:move_player_pos_rot'.pitch,
-        on_ground = (Flags band 16#01) =/= 0,
+        x = NewX,
+        y = NewY,
+        z = NewZ,
+        yaw = Yaw,
+        pitch = Pitch,
+        on_ground = OnGround,
         touching_wall = (Flags band 16#02) =/= 0
     },
-    check_and_update_chunks(Record#'minecraft:move_player_pos_rot'.x, Record#'minecraft:move_player_pos_rot'.z, State),
-    {ok, State#state{player_data = NewPos}}.
+    {ok, State2} = check_and_update_chunks(NewX, NewZ, State),
+
+    DeltaX = trunc((NewX * 32.0 - CurrentPos#player_position.x * 32.0) * 128.0),
+    DeltaY = trunc((NewY * 32.0 - CurrentPos#player_position.y * 32.0) * 128.0),
+    DeltaZ = trunc((NewZ * 32.0 - CurrentPos#player_position.z * 32.0) * 128.0),
+
+    ChunkX = pos_to_chunk_coord(NewX),
+    ChunkZ = pos_to_chunk_coord(NewZ),
+    IsTooFar = (DeltaX > 32767) orelse (DeltaX < -32768) orelse
+               (DeltaY > 32767) orelse (DeltaY < -32768) orelse
+               (DeltaZ > 32767) orelse (DeltaZ < -32768),
+    if
+        IsTooFar ->
+            TeleportRecord = #'minecraft:teleport_entity'{
+                entity_id = State2#state.entity_id,
+                x = NewX, y = NewY, z = NewZ,
+                vx = 0.0, vy = 0.0, vz = 0.0,
+                yaw = Yaw, pitch = Pitch,
+                flags = 0, on_ground = OnGround
+            },
+            broadcast_to_nearby(ChunkX, ChunkZ, {state_update, State2#state.entity_id, 'minecraft:teleport_entity', TeleportRecord});
+        true ->
+            MoveRecord = #'minecraft:move_entity_pos_rot'{
+                entity_id = State2#state.entity_id,
+                delta_x = DeltaX,
+                delta_y = DeltaY,
+                delta_z = DeltaZ,
+                yaw = Yaw,
+                pitch = Pitch,
+                on_ground = OnGround
+            },
+            broadcast_to_nearby(ChunkX, ChunkZ, {state_update, State2#state.entity_id, 'minecraft:move_entity_pos_rot', MoveRecord})
+    end,
+
+    HeadRecord = #'minecraft:rotate_head'{
+        entity_id = State2#state.entity_id,
+        head_yaw = Yaw
+    },
+    broadcast_to_nearby(ChunkX, ChunkZ, {state_update, State2#state.entity_id, 'minecraft:rotate_head', HeadRecord}),
+
+    {ok, State2#state{player_data = NewPos}}.
 
 minecraft_move_player_rot(Record, State) ->
     CurrentPos = State#state.player_data,
     Flags = Record#'minecraft:move_player_rot'.flags,
+    Yaw = Record#'minecraft:move_player_rot'.yaw,
+    Pitch = Record#'minecraft:move_player_rot'.pitch,
+    OnGround = (Flags band 16#01) =/= 0,
+
     NewPos = CurrentPos#player_position{
-        yaw = Record#'minecraft:move_player_rot'.yaw,
-        pitch = Record#'minecraft:move_player_rot'.pitch,
-        on_ground = (Flags band 16#01) =/= 0,
+        yaw = Yaw,
+        pitch = Pitch,
+        on_ground = OnGround,
         touching_wall = (Flags band 16#02) =/= 0
     },
+
+    MoveRecord = #'minecraft:move_entity_rot'{
+        entity_id = State#state.entity_id,
+        yaw = Yaw,
+        pitch = Pitch,
+        on_ground = OnGround
+    },
+
+    ChunkX = pos_to_chunk_coord(CurrentPos#player_position.x),
+    ChunkZ = pos_to_chunk_coord(CurrentPos#player_position.z),
+    broadcast_to_nearby(ChunkX, ChunkZ, {state_update, State#state.entity_id, 'minecraft:move_entity_rot', MoveRecord}),
+    HeadRecord = #'minecraft:rotate_head'{
+        entity_id = State#state.entity_id,
+        head_yaw = Yaw
+    },
+    broadcast_to_nearby(ChunkX, ChunkZ, {state_update, State#state.entity_id, 'minecraft:rotate_head', HeadRecord}),
+
     {ok, State#state{player_data = NewPos}}.
+
+minecraft_player_input(_Record, State) ->
+    {ok, State}.
 
 minecraft_move_player_status_only(Record, State) ->
     CurrentPos = State#state.player_data,
@@ -454,6 +629,20 @@ handle_chunk_change(OldChunk, NewChunk, State) ->
     NewSet = ordsets:from_list([{X, Z} || X <- lists:seq(NewChunkX - R, NewChunkX + R), Z <- lists:seq(NewChunkZ - R, NewChunkZ + R)]),
     ToUnload = ordsets:subtract(OldSet, NewSet),
     ToLoad   = ordsets:subtract(NewSet, OldSet),
+    lists:foreach(fun({UnloadX, UnloadZ}) ->
+        Pids = pg:get_members(minecraft_players, {chunk, UnloadX, UnloadZ}),
+        SelfPid = self(),
+        [begin
+            Pid ! {nearby_event, {event, player_left_view_if_far, {SelfPid, State#state.entity_id, NewChunk, R}}}
+         end || Pid <- Pids, Pid /= SelfPid],
+        pg:leave(minecraft_players, {chunk, UnloadX, UnloadZ}, self())
+    end, ToUnload),
+    Username = case State#state.username of undefined -> "Player"; U -> U end,
+    lists:foreach(fun({LoadX, LoadZ}) ->
+        pg:join(minecraft_players, {chunk, LoadX, LoadZ}, self()),
+        broadcast_to_nearby(LoadX, LoadZ, {event, player_entered_view, {self(), State#state.entity_id, State#state.uuid, Username, State#state.player_data}})
+    end, ToLoad),
+
     State3 = lists:foldl(
         fun({UnloadX, UnloadZ}, AccState) ->
             UnloadRecord = #'minecraft:forget_level_chunk'{chunk_x = UnloadX, chunk_z = UnloadZ},
@@ -471,7 +660,8 @@ handle_chunk_change(OldChunk, NewChunk, State) ->
         State3,
         ToLoad
     ),
-    {ok, State4}.
+    {ok, State4#state{current_chunk = NewChunk}}.
+
 
 
 
@@ -500,8 +690,10 @@ minecraft_client_tick_end(_Record, State) ->
 
 
 
-
-
+broadcast_to_nearby(ChunkX, ChunkZ, EventMsg) ->
+    NearbyPids = pg:get_members(minecraft_players, {chunk, ChunkX, ChunkZ}),
+    SelfPid = self(),
+    [Pid ! {nearby_event, EventMsg} || Pid <- NearbyPids, Pid /= SelfPid].
 
 
 
@@ -546,8 +738,97 @@ encode_message(PacketName, Record, State) ->
         forget_level_chunk ->
             encode_forget_level_chunk(Record, State);
         'minecraft:level_chunk_with_light' ->
-            encode_level_chunk_with_light(Record, State)
+            encode_level_chunk_with_light(Record, State);
+        'minecraft:move_entity_pos_rot' ->
+            encode_move_entity_pos_rot(Record, State);
+        'minecraft:move_entity_pos' ->
+            encode_move_entity_pos(Record, State);
+        'minecraft:move_entity_rot' ->
+            encode_move_entity_rot(Record, State);
+        'minecraft:add_entity' ->
+            encode_add_entity(Record, State);
+        add_entity ->
+            encode_add_entity(Record, State);
+        'minecraft:remove_entities' ->
+            encode_remove_entities(Record, State);
+        remove_entities ->
+            encode_remove_entities(Record, State);
+        'minecraft:rotate_head' ->
+            encode_rotate_head(Record, State);
+        rotate_head ->
+            encode_rotate_head(Record, State);
+        'minecraft:teleport_entity' ->
+            encode_teleport_entity(Record, State);
+        teleport_entity ->
+            encode_teleport_entity(Record, State)
     end.
+
+encode_teleport_entity(#'minecraft:teleport_entity'{
+    entity_id = EntityId,
+    x = X, y = Y, z = Z,
+    vx = Vx, vy = Vy, vz = Vz,
+    yaw = Yaw, pitch = Pitch,
+    flags = Flags, on_ground = OnGround
+}, State) ->
+    {{'minecraft:teleport_entity', [EntityId, X, Y, Z, Vx, Vy, Vz, Yaw, Pitch, Flags, OnGround]}, State};
+encode_teleport_entity({'minecraft:teleport_entity', DataList}, State) ->
+    {{'minecraft:teleport_entity', DataList}, State}.
+
+encode_rotate_head(#'minecraft:rotate_head'{entity_id = EntityId, head_yaw = HeadYaw}, State) ->
+    {{'minecraft:rotate_head', [EntityId, HeadYaw]}, State};
+encode_rotate_head({'minecraft:rotate_head', [EntityId, HeadYaw]}, State) ->
+    {{'minecraft:rotate_head', [EntityId, HeadYaw]}, State}.
+
+encode_remove_entities(#'minecraft:remove_entities'{entity_ids = EntityIds}, State) ->
+    {{'minecraft:remove_entities', [EntityIds]}, State};
+encode_remove_entities(EntityIds, State) when is_list(EntityIds) ->
+    {{'minecraft:remove_entities', [EntityIds]}, State}.
+
+encode_add_entity(Record, State) ->
+    {{'minecraft:add_entity', [
+        Record#'minecraft:add_entity'.entity_id,
+        Record#'minecraft:add_entity'.uuid,
+        Record#'minecraft:add_entity'.type,
+        Record#'minecraft:add_entity'.x,
+        Record#'minecraft:add_entity'.y,
+        Record#'minecraft:add_entity'.z,
+        Record#'minecraft:add_entity'.velocity,
+        Record#'minecraft:add_entity'.pitch,
+        Record#'minecraft:add_entity'.yaw,
+        Record#'minecraft:add_entity'.head_yaw,
+        Record#'minecraft:add_entity'.data
+    ]}, State}.
+
+encode_move_entity_pos_rot(Record, State) ->
+    {{'minecraft:move_entity_pos_rot', [
+        Record#'minecraft:move_entity_pos_rot'.entity_id,
+        Record#'minecraft:move_entity_pos_rot'.delta_x,
+        Record#'minecraft:move_entity_pos_rot'.delta_y,
+        Record#'minecraft:move_entity_pos_rot'.delta_z,
+        Record#'minecraft:move_entity_pos_rot'.yaw,
+        Record#'minecraft:move_entity_pos_rot'.pitch,
+        Record#'minecraft:move_entity_pos_rot'.on_ground
+    ]}, State}.
+
+encode_move_entity_pos(Record, State) ->
+    {{'minecraft:move_entity_pos', [
+        Record#'minecraft:move_entity_pos'.entity_id,
+        Record#'minecraft:move_entity_pos'.delta_x,
+        Record#'minecraft:move_entity_pos'.delta_y,
+        Record#'minecraft:move_entity_pos'.delta_z,
+        Record#'minecraft:move_entity_pos'.on_ground
+    ]}, State}.
+
+encode_move_entity_rot(Record, State) ->
+    {{'minecraft:move_entity_rot', [
+        Record#'minecraft:move_entity_rot'.entity_id,
+        Record#'minecraft:move_entity_rot'.yaw,
+        Record#'minecraft:move_entity_rot'.pitch,
+        Record#'minecraft:move_entity_rot'.on_ground
+    ]}, State}.
+
+
+
 
 encode_status_response(Record, State) ->
     {{'minecraft:status_response', [Record#'minecraft:status_response'.json_response]}, State}.
@@ -664,5 +945,102 @@ encode_level_chunk_with_light(#'minecraft:level_chunk_with_light'{
     {{'minecraft:level_chunk_with_light', [X, Z, Heightmaps, Data, BlockEntities, Light]}, State};
 encode_level_chunk_with_light({'minecraft:level_chunk_with_light', DataList}, State) ->
     {{'minecraft:level_chunk_with_light', DataList}, State}.
+
+build_add_entity_record(EntityId, UUID, #player_position{x = X, y = Y, z = Z, yaw = Yaw, pitch = Pitch}) ->
+    UUIDVal = case UUID of
+        undefined -> <<0:128>>;
+        B when is_binary(B) -> B;
+        _ -> <<0:128>>
+    end,
+    #'minecraft:add_entity'{
+        entity_id = EntityId,
+        uuid = UUIDVal,
+        type = 156,
+        x = X,
+        y = Y,
+        z = Z,
+        velocity = #lp_vec3{x = 0.0, y = 0.0, z = 0.0},
+        pitch = Pitch,
+        yaw = Yaw,
+        head_yaw = Yaw,
+        data = 0
+    }.
+
+handle_nearby_event({state_update, EntityId, MsgType, Record}, State) ->
+    Key = {EntityId, MsgType},
+    NewStateUpdates = maps:put(Key, {MsgType, Record}, State#state.pending_state_updates),
+    {noreply, State#state{pending_state_updates = NewStateUpdates}};
+
+handle_nearby_event({event, player_entered_view, {SenderPid, OtherEntityId, OtherUUID, OtherUsername, OtherPos}}, State) ->
+    MyUsername = case State#state.username of undefined -> "Player"; U -> U end,
+    case sets:is_element(OtherEntityId, State#state.loaded_entities) of
+        true ->
+            SenderPid ! {nearby_event, {event, spawn_existing_player, {self(), State#state.entity_id, State#state.uuid, MyUsername, State#state.player_data}}},
+            {noreply, State};
+        false ->
+            PlayerInfoRec = #'minecraft:player_info_update'{
+                actions = 1,
+                players = [{OtherUUID, [{add_player, OtherUsername, []}]}]
+            },
+            {ok, State1} = player:send_message('minecraft:player_info_update', PlayerInfoRec, State),
+            AddEntityRec = build_add_entity_record(OtherEntityId, OtherUUID, OtherPos),
+            {ok, State2} = player:send_message('minecraft:add_entity', AddEntityRec, State1),
+            NewLoaded = sets:add_element(OtherEntityId, State2#state.loaded_entities),
+            SenderPid ! {nearby_event, {event, spawn_existing_player, {self(), State#state.entity_id, State#state.uuid, MyUsername, State#state.player_data}}},
+            {noreply, State2#state{loaded_entities = NewLoaded}}
+    end;
+
+handle_nearby_event({event, spawn_existing_player, {_SenderPid, OtherEntityId, OtherUUID, OtherUsername, OtherPos}}, State) ->
+    case sets:is_element(OtherEntityId, State#state.loaded_entities) of
+        true ->
+            {noreply, State};
+        false ->
+            PlayerInfoRec = #'minecraft:player_info_update'{
+                actions = 1,
+                players = [{OtherUUID, [{add_player, OtherUsername, []}]}]
+            },
+            {ok, State1} = player:send_message('minecraft:player_info_update', PlayerInfoRec, State),
+            AddEntityRec = build_add_entity_record(OtherEntityId, OtherUUID, OtherPos),
+            {ok, State2} = player:send_message('minecraft:add_entity', AddEntityRec, State1),
+            NewLoaded = sets:add_element(OtherEntityId, State2#state.loaded_entities),
+            {noreply, State2#state{loaded_entities = NewLoaded}}
+    end;
+
+handle_nearby_event({event, player_left_view_if_far, {_SenderPid, OtherEntityId, OtherNewChunk, SenderRenderDist}}, State) ->
+    {MyCX, MyCZ} = State#state.current_chunk,
+    {OtherCX, OtherCZ} = OtherNewChunk,
+    DistX = abs(MyCX - OtherCX),
+    DistZ = abs(MyCZ - OtherCZ),
+    IsFar = (DistX > SenderRenderDist) orelse (DistZ > SenderRenderDist) orelse (DistX > State#state.render_distance) orelse (DistZ > State#state.render_distance),
+    case IsFar of
+        true ->
+            case sets:is_element(OtherEntityId, State#state.loaded_entities) of
+                true ->
+                    RemoveRec = #'minecraft:remove_entities'{entity_ids = [OtherEntityId]},
+                    {ok, State2} = player:send_message('minecraft:remove_entities', RemoveRec, State),
+                    NewLoaded = sets:del_element(OtherEntityId, State2#state.loaded_entities),
+                    {noreply, State2#state{loaded_entities = NewLoaded}};
+                false ->
+                    {noreply, State}
+            end;
+        false ->
+            {noreply, State}
+    end;
+
+handle_nearby_event({event, player_left_view, {_SenderPid, OtherEntityId}}, State) ->
+    case sets:is_element(OtherEntityId, State#state.loaded_entities) of
+        true ->
+            RemoveRec = #'minecraft:remove_entities'{entity_ids = [OtherEntityId]},
+            {ok, State2} = player:send_message('minecraft:remove_entities', RemoveRec, State),
+            NewLoaded = sets:del_element(OtherEntityId, State2#state.loaded_entities),
+            {noreply, State2#state{loaded_entities = NewLoaded}};
+        false ->
+            {noreply, State}
+    end;
+
+handle_nearby_event({event, PacketName, Record}, State) ->
+    NewEvents = State#state.pending_events ++ [{PacketName, Record}],
+    {noreply, State#state{pending_events = NewEvents}}.
+
 
 
