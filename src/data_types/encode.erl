@@ -1957,11 +1957,3 @@ encode_type_advancement_progress(#advancement_progress{criteria = Criteria}) ->
 encode_type_advancement_progress(Criteria) when is_list(Criteria) ->
     encode_prefixed_array(Criteria, [identifier, {prefixed_optional, long}]).
 
-%% Hook advancement and advancement_progress into encode_type/2
-%% (these are only used via encode_prefixed_array_list, so we add them here for completeness)
-encode_type_advancement_hook(Data, advancement) ->
-    encode_type_advancement(Data);
-encode_type_advancement_hook(Data, advancement_progress) ->
-    encode_type_advancement_progress(Data).
-
-

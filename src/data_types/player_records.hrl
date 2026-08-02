@@ -7,3 +7,8 @@
 				on_ground = false :: boolean(),
 				touching_wall = false :: boolean()
 			   }).
+
+-record(inventories, {
+	player_invent,
+	echest
+}).

@@ -31,6 +31,8 @@
     render_distance = 12,
     current_chunk = {0,0},
     player_data,
+    inventories,
+    current_slot,
     entity_id,
     pending_state_updates = #{},
     pending_events = [],
@@ -84,7 +86,8 @@ init([Listen_pid, Listen_socket]) ->
             queue = <<>>,
             state_of_play = ?HANDSHAKE,
             player_data = #player_position{},
-            loaded_entities = sets:new()}}.
+            loaded_entities = sets:new(),
+            current_slot = 0}}.
 
 terminate(_Reason, #state{current_chunk = {ChunkX, ChunkZ}, entity_id = EntityId, render_distance = R}) when is_integer(EntityId) ->
     ChunkCoords = [{X, Z} || X <- lists:seq(ChunkX - R, ChunkX + R), Z <- lists:seq(ChunkZ - R, ChunkZ + R)],
@@ -396,7 +399,7 @@ minecraft_finish_configuration(_Record, State) ->
         dimension_type = 0,
         dimension_name = "minecraft:overworld",
         hashed_seed = 0,
-        game_mode = 1,
+        game_mode = 0,
         previous_game_mode = -1,
         is_debug = false,
         is_flat = false,
