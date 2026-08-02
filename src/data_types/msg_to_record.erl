@@ -155,6 +155,50 @@ msg_to_record(Msg) ->
         {'minecraft:player_loaded', []} ->
             #'minecraft:player_loaded'{};
 
+        {'minecraft:container_set_content', [WindowId, StateId, SlotData, CarriedItem]} ->
+            SlotData2 = case SlotData of
+                #prefixed_array{prefixed_array = Arr} -> Arr;
+                _ -> SlotData
+            end,
+            #'minecraft:container_set_content'{
+                window_id = decode:extract_value(WindowId),
+                state_id = decode:extract_value(StateId),
+                slot_data = SlotData2,
+                carried_item = CarriedItem
+            };
+        {'minecraft:container_click', [WindowId, StateId, Slot, Button, Mode, ChangedSlots, CarriedItem]} ->
+            ChangedSlots2 = case ChangedSlots of
+                #prefixed_array{prefixed_array = Arr} ->
+                    [{decode:extract_value(SlotNum), HashedSlot}
+                     || {SlotNum, HashedSlot} <- Arr];
+                _ ->
+                    ChangedSlots
+            end,
+            #'minecraft:container_click'{
+                window_id = decode:extract_value(WindowId),
+                state_id = decode:extract_value(StateId),
+                slot = decode:extract_value(Slot),
+                button = decode:extract_value(Button),
+                mode = decode:extract_value(Mode),
+                changed_slots = ChangedSlots2,
+                carried_item = CarriedItem
+            };
+        {'minecraft:container_close', [WindowId]} ->
+            #'minecraft:container_close'{
+                window_id = decode:extract_value(WindowId)
+            };
+        {'minecraft:container_set_slot', [WindowId, StateId, Slot, SlotData]} ->
+            #'minecraft:container_set_slot'{
+                window_id = decode:extract_value(WindowId),
+                state_id = decode:extract_value(StateId),
+                slot = decode:extract_value(Slot),
+                slot_data = SlotData
+            };
+        {'minecraft:set_cursor_item', [CarriedItem]} ->
+            #'minecraft:set_cursor_item'{
+                carried_item = CarriedItem
+            };
+
         _ ->
             io:format("Error: Unknown message type: ~p~n", [Msg]),
             ok

@@ -36,7 +36,12 @@
     entity_id,
     pending_state_updates = #{},
     pending_events = [],
-    loaded_entities = sets:new()
+    loaded_entities = sets:new(),
+    %% Container / inventory protocol state (see SPEC.md Set Container Content)
+    container_state_id = 0,   %% last State ID sent to the client
+    carried_item,             %% cursor item (#slot{}), set at init
+    open_window_id = 0,       %% 0 = player inventory; other IDs for open screens
+    drag_state                %% undefined | {left|right|middle, [Slot]} for mode 5
 }).
 
 %% api
@@ -81,13 +86,22 @@ start_link(Listen_pid, Listen_socket) ->
 
 init([Listen_pid, Listen_socket]) ->
     self() ! run_accept,
+    EmptySlot = inventory:empty_slot(),
     {ok, #state{listen_pid = Listen_pid,
             listen_socket = Listen_socket,
             queue = <<>>,
             state_of_play = ?HANDSHAKE,
             player_data = #player_position{},
+            inventories = #inventories{
+                player_invent = inventory:new_player_inventory(),
+                echest = inventory:new_grid_inventory(3)
+            },
             loaded_entities = sets:new(),
-            current_slot = 0}}.
+            current_slot = 0,
+            container_state_id = 0,
+            carried_item = EmptySlot,
+            open_window_id = 0,
+            drag_state = undefined}}.
 
 terminate(_Reason, #state{current_chunk = {ChunkX, ChunkZ}, entity_id = EntityId, render_distance = R}) when is_integer(EntityId) ->
     ChunkCoords = [{X, Z} || X <- lists:seq(ChunkX - R, ChunkX + R), Z <- lists:seq(ChunkZ - R, ChunkZ + R)],
@@ -313,8 +327,12 @@ decode_message(Data, State) ->
             minecraft_move_player_rot(Record, State);
         {'minecraft:move_player_status_only', Record} ->
             minecraft_move_player_status_only(Record, State);
-        {'minecraft:player_loaded', _Record} ->
-            {ok, State};
+        {'minecraft:player_loaded', Record} ->
+            minecraft_player_loaded(Record, State);
+        {'minecraft:container_click', Record} ->
+            minecraft_container_click(Record, State);
+        {'minecraft:container_close', Record} ->
+            minecraft_container_close(Record, State);
         {'minecraft:player_input', Record} ->
             minecraft_player_input(Record, State);
         _ ->
@@ -502,6 +520,111 @@ minecraft_move_player_pos(Record, State) ->
     end,
 
     {ok, State2#state{player_data = NewPos}}.
+
+%% After the client finishes loading terrain, sync the player inventory
+%% (SPEC: Set Container Content is sent upon initialization of the player's inventory).
+minecraft_player_loaded(_Record, State) ->
+    Content = #'minecraft:container_set_content'{window_id = 0},
+    player:send_message('minecraft:container_set_content', Content, State).
+
+%% Serverbound Click Container (SPEC.md).
+%% Ignore wrong window id; on state id mismatch send full Set Container Content;
+%% otherwise simulate the click and Set Container Slot for any mismatches.
+minecraft_container_click(Record, State) ->
+    WindowId = Record#'minecraft:container_click'.window_id,
+    StateId = Record#'minecraft:container_click'.state_id,
+    Slot = Record#'minecraft:container_click'.slot,
+    Button = Record#'minecraft:container_click'.button,
+    Mode = Record#'minecraft:container_click'.mode,
+    ChangedSlots = Record#'minecraft:container_click'.changed_slots,
+    ClientCarried = Record#'minecraft:container_click'.carried_item,
+
+    OpenId = State#state.open_window_id,
+    case WindowId =:= OpenId of
+        false ->
+            %% SPEC: ignore packets for any window other than the current one
+            {ok, State};
+        true ->
+            case StateId =:= State#state.container_state_id of
+                false ->
+                    %% SPEC: do not apply the click; full resync instead
+                    State1 = State#state{drag_state = undefined},
+                    Content = #'minecraft:container_set_content'{window_id = WindowId},
+                    player:send_message('minecraft:container_set_content', Content, State1);
+                true ->
+                    apply_container_click(WindowId, Mode, Button, Slot,
+                                         ChangedSlots, ClientCarried, State)
+            end
+    end.
+
+apply_container_click(WindowId, Mode, Button, Slot, ChangedSlots, ClientCarried, State) ->
+    #inventories{player_invent = PlayerInv} = State#state.inventories,
+    Carried = case State#state.carried_item of
+        undefined -> inventory:empty_slot();
+        C -> C
+    end,
+    Drag = State#state.drag_state,
+    {NewInv, NewCarried, Touched, NewDrag} =
+        inventory:container_click(Mode, Button, Slot, PlayerInv, Carried, Drag),
+
+    State1 = State#state{
+        inventories = State#state.inventories#inventories{player_invent = NewInv},
+        carried_item = NewCarried,
+        drag_state = NewDrag
+    },
+
+    %% SPEC: compare post-action server state to client changed-slots (as if
+    %% applied on top of the pre-action server view) and correct mismatches.
+    ClientSlots = [S || {S, _} <- ChangedSlots, is_integer(S), S >= 0],
+    CheckSlots = lists:usort(Touched ++ ClientSlots),
+    MismatchSlots = [I || I <- CheckSlots, slot_mismatches(I, NewInv, ChangedSlots)],
+    CarriedMismatch = not inventory:matches_hashed(NewCarried, ClientCarried),
+
+    State2 = send_slot_corrections(WindowId, MismatchSlots, State1),
+    case CarriedMismatch of
+        true ->
+            Cursor = #'minecraft:set_cursor_item'{carried_item = NewCarried},
+            player:send_message('minecraft:set_cursor_item', Cursor, State2);
+        false ->
+            {ok, State2}
+    end.
+
+%% Client did not report this slot -> they still have the pre-action value.
+%% If we touched it, that is a mismatch. If they reported it, compare hashes.
+slot_mismatches(I, Inv, ChangedSlots) ->
+    try
+        ServerSlot = inventory:get_slot(Inv, I),
+        case lists:keyfind(I, 1, ChangedSlots) of
+            false ->
+                true;
+            {I, Hashed} ->
+                not inventory:matches_hashed(ServerSlot, Hashed)
+        end
+    catch
+        error:{bad_slot, _, _} -> false;
+        error:{bad_slot, _} -> false
+    end.
+
+send_slot_corrections(_WindowId, [], State) ->
+    State;
+send_slot_corrections(WindowId, [Slot | Rest], State) ->
+    #inventories{player_invent = Inv} = State#state.inventories,
+    SlotData = try inventory:get_slot(Inv, Slot)
+               catch error:{bad_slot, _, _} -> inventory:empty_slot();
+                     error:{bad_slot, _} -> inventory:empty_slot()
+               end,
+    Packet = #'minecraft:container_set_slot'{
+        window_id = WindowId,
+        slot = Slot,
+        slot_data = SlotData
+    },
+    {ok, State1} = player:send_message('minecraft:container_set_slot', Packet, State),
+    send_slot_corrections(WindowId, Rest, State1).
+
+minecraft_container_close(Record, State) ->
+    _WindowId = Record#'minecraft:container_close'.window_id,
+    %% Always return to player inventory window (id 0).
+    {ok, State#state{open_window_id = 0, drag_state = undefined}}.
 
 minecraft_move_player_pos_rot(Record, State) ->
     CurrentPos = State#state.player_data,
@@ -763,7 +886,15 @@ encode_message(PacketName, Record, State) ->
         'minecraft:teleport_entity' ->
             encode_teleport_entity(Record, State);
         teleport_entity ->
-            encode_teleport_entity(Record, State)
+            encode_teleport_entity(Record, State);
+        'minecraft:container_set_content' ->
+            encode_container_set_content(Record, State);
+        'minecraft:container_set_slot' ->
+            encode_container_set_slot(Record, State);
+        'minecraft:set_cursor_item' ->
+            encode_set_cursor_item(Record, State);
+        'minecraft:container_click' ->
+            encode_container_click(Record, State)
     end.
 
 encode_teleport_entity(#'minecraft:teleport_entity'{
@@ -892,6 +1023,117 @@ encode_game_event(#'minecraft:game_event'{event = Event, value = Value}, State) 
     {{'minecraft:game_event', [Event, Value]}, State};
 encode_game_event({'minecraft:game_event', [Event, Value]}, State) ->
     {{'minecraft:game_event', [Event, Value]}, State}.
+
+encode_container_set_content(#'minecraft:container_set_content'{
+    window_id = WindowId0,
+    state_id = StateId0,
+    slot_data = SlotData0,
+    carried_item = Carried0
+}, State) ->
+    WindowId = case WindowId0 of
+        undefined -> 0;
+        W when is_integer(W) -> W
+    end,
+    {SlotData, Carried, StateId, NewState} =
+        resolve_container_set_content(WindowId, StateId0, SlotData0, Carried0, State),
+    {{'minecraft:container_set_content', [WindowId, StateId, SlotData, Carried]}, NewState};
+encode_container_set_content({'minecraft:container_set_content', Fields}, State) ->
+    {{'minecraft:container_set_content', Fields}, State}.
+
+%% Build wire fields and advance container_state_id when encoding against live player state.
+resolve_container_set_content(WindowId, StateId0, SlotData0, Carried0, State = #state{}) ->
+    AutoSlots = (SlotData0 =:= undefined) orelse (SlotData0 =:= []),
+    SlotData = case AutoSlots of
+        true -> slots_for_window(WindowId, State);
+        false -> SlotData0
+    end,
+    %% When auto-building from inventory, always use the server's cursor stack.
+    Carried = case AutoSlots of
+        true ->
+            case State#state.carried_item of
+                undefined -> inventory:empty_slot();
+                C -> C
+            end;
+        false ->
+            case Carried0 of
+                undefined -> inventory:empty_slot();
+                C -> C
+            end
+    end,
+    %% Server-managed State ID: bump on every full content send (SPEC resync / init).
+    NextStateId = case StateId0 of
+        undefined -> State#state.container_state_id + 1;
+        Explicit when is_integer(Explicit) -> Explicit
+    end,
+    NewState = State#state{container_state_id = NextStateId},
+    {SlotData, Carried, NextStateId, NewState};
+resolve_container_set_content(_WindowId, StateId0, SlotData0, Carried0, State) ->
+    %% Tests / encode without player state: use record fields as-is.
+    SlotData = case SlotData0 of undefined -> []; S -> S end,
+    Carried = case Carried0 of
+        undefined -> inventory:empty_slot();
+        C -> C
+    end,
+    StateId = case StateId0 of undefined -> 0; I -> I end,
+    {SlotData, Carried, StateId, State}.
+
+%% Map a window ID to the server's slot list for that window.
+%% Window 0 is always the player inventory (crafting, armor, main, hotbar, offhand).
+slots_for_window(0, #state{inventories = #inventories{player_invent = PlayerInv}})
+  when PlayerInv =/= undefined ->
+    inventory:to_slot_list(PlayerInv);
+slots_for_window(0, _State) ->
+    inventory:to_slot_list(inventory:new_player_inventory());
+slots_for_window(_WindowId, #state{inventories = #inventories{player_invent = PlayerInv}})
+  when PlayerInv =/= undefined ->
+    %% Open screens not yet modelled as separate inventories: fall back to
+    %% player inventory so a full resync still has a valid slot array.
+    inventory:to_slot_list(PlayerInv);
+slots_for_window(_WindowId, _State) ->
+    inventory:to_slot_list(inventory:new_player_inventory()).
+
+encode_container_click(#'minecraft:container_click'{
+    window_id = WindowId,
+    state_id = StateId,
+    slot = Slot,
+    button = Button,
+    mode = Mode,
+    changed_slots = ChangedSlots,
+    carried_item = CarriedItem
+}, State) ->
+    {{'minecraft:container_click', [WindowId, StateId, Slot, Button, Mode, ChangedSlots, CarriedItem]}, State};
+encode_container_click({'minecraft:container_click', Fields}, State) ->
+    {{'minecraft:container_click', Fields}, State}.
+
+encode_container_set_slot(#'minecraft:container_set_slot'{
+    window_id = WindowId0,
+    state_id = StateId0,
+    slot = Slot,
+    slot_data = SlotData0
+}, State) ->
+    WindowId = case WindowId0 of undefined -> 0; W -> W end,
+    SlotData = case SlotData0 of undefined -> inventory:empty_slot(); S -> S end,
+    {StateId, NewState} = case State of
+        #state{} ->
+            Next = case StateId0 of
+                undefined -> State#state.container_state_id + 1;
+                Explicit when is_integer(Explicit) -> Explicit
+            end,
+            {Next, State#state{container_state_id = Next}};
+        _ ->
+            {case StateId0 of undefined -> 0; I -> I end, State}
+    end,
+    {{'minecraft:container_set_slot', [WindowId, StateId, Slot, SlotData]}, NewState};
+encode_container_set_slot({'minecraft:container_set_slot', Fields}, State) ->
+    {{'minecraft:container_set_slot', Fields}, State}.
+
+encode_set_cursor_item(#'minecraft:set_cursor_item'{carried_item = Carried0}, State) ->
+    Carried = case Carried0 of undefined -> inventory:empty_slot(); C -> C end,
+    NewState = case State of
+        #state{} -> State#state{carried_item = Carried};
+        _ -> State
+    end,
+    {{'minecraft:set_cursor_item', [Carried]}, NewState}.
 
 encode_player_info_update(Record = #'minecraft:player_info_update'{}, State) ->
     {{'minecraft:player_info_update', [Record]}, State};

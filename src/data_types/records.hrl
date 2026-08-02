@@ -757,6 +757,47 @@
     , on_ground = false :: boolean()
 }).
 
+%% Clientbound Set Container Content (Play ID 18)
+-record('minecraft:container_set_content', {
+    window_id :: varint()
+    , state_id :: varint()
+    , slot_data = [] :: list(#slot{})
+    , carried_item = #slot{item_count = 0, itemID = undefined,
+                           components_to_add = [], components_to_remove = []} :: #slot{}
+}).
+
+%% Serverbound / Clientbound Close Container
+-record('minecraft:container_close', {
+    window_id :: varint()
+}).
+
+%% Serverbound Click Container (Play ID 18)
+-record('minecraft:container_click', {
+    window_id :: varint()
+    , state_id :: varint()
+    , slot :: short()
+    , button :: byte()
+    , mode :: varint()
+    , changed_slots = [] :: list({short(), #hashed_slot{}})
+    , carried_item = #hashed_slot{item_count = 0, itemID = undefined,
+                                  components_to_add = [], components_to_remove = []} :: #hashed_slot{}
+}).
+
+%% Clientbound Set Container Slot (Play ID 20)
+-record('minecraft:container_set_slot', {
+    window_id :: varint()
+    , state_id :: varint()
+    , slot :: short()
+    , slot_data = #slot{item_count = 0, itemID = undefined,
+                        components_to_add = [], components_to_remove = []} :: #slot{}
+}).
+
+%% Clientbound Set Cursor Item (Play ID 96)
+-record('minecraft:set_cursor_item', {
+    carried_item = #slot{item_count = 0, itemID = undefined,
+                         components_to_add = [], components_to_remove = []} :: #slot{}
+}).
+
 
 
 

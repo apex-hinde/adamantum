@@ -15,7 +15,7 @@ start(_StartType, _StartArgs) ->
     mnesia:start(),
     world_manager:setup(),
     world_manager:clear_chunk_table(),
-%%    player_manager:setup(),
+    player_manager:setup(),
 %%    player_manager:clear_player_table(),
     sup:start_link().
 
