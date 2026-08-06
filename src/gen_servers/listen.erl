@@ -32,7 +32,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({init, Port}, State) ->
-    NewState = 
+    NewState =
         case gen_tcp:listen(Port, [binary, {active, true}, {reuseaddr, true}]) of
             {ok, Socket} ->
                 player:start_link(self(), Socket),

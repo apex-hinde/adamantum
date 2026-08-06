@@ -798,8 +798,43 @@
                          components_to_add = [], components_to_remove = []} :: #slot{}
 }).
 
+%% Serverbound Set Creative Mode Slot (Play ID 56 / 0x38)
+%% Slot -1 = drop outside window (spawn item entity); 0..45 = player inv.
+-record('minecraft:set_creative_mode_slot', {
+    slot :: short()
+    , clicked_item = #slot{item_count = 0, itemID = undefined,
+                           components_to_add = [], components_to_remove = []} :: #slot{}
+}).
 
+%% Serverbound Player Action (Play ID 41 / 0x29)
+%% Status: 0 started dig, 1 cancel dig, 2 finish dig, 3 drop stack,
+%%         4 drop item, 5 shoot arrow / finish eating, 6 swap hands, 7 stab
+%% Face: 0 -Y bottom, 1 +Y top, 2 -Z north, 3 +Z south, 4 -X west, 5 +X east
+-record('minecraft:player_action', {
+    status :: varint()
+    , location = #position{x = 0, y = 0, z = 0} :: #position{}
+    , face = 0 :: byte()
+    , sequence = 0 :: varint()
+}).
 
+%% Clientbound Acknowledge Block Change / block_changed_ack (Play ID 4)
+-record('minecraft:block_changed_ack', {
+    sequence :: varint()
+}).
+
+%% Clientbound Block Update (Play ID 8)
+-record('minecraft:block_update', {
+    location = #position{x = 0, y = 0, z = 0} :: #position{}
+    , block_id = 0 :: varint()
+}).
+
+%% Clientbound Set Block Destroy Stage / block_destruction (Play ID 5)
+%% Destroy stage 0–9 = progress, 10+ = remove overlay.
+-record('minecraft:block_destruction', {
+    entity_id :: varint()
+    , location = #position{x = 0, y = 0, z = 0} :: #position{}
+    , destroy_stage = 0 :: ubyte()
+}).
 
 
 

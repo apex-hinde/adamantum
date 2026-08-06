@@ -35,7 +35,12 @@
     with_count/2,
     merge_slots/2,
     matches_hashed/2,
-    container_click/6
+    container_click/6,
+    set_creative_mode_slot/3,
+    drop_selected_item/2,
+    drop_selected_stack/2,
+    swap_hands/2,
+    hotbar_slot/1
 ]).
 
 %% Empty slot used to initialise inventories.
@@ -474,11 +479,7 @@ set_slot(#llama_inventory{chest = Chest} = Inv, I, Slot) when is_integer(I), I >
 set_slot(Inv, I, _Slot) ->
     error({bad_slot, Inv, I}).
 
-%% ---------------------------------------------------------------------------
-%% Protocol slot lists — ordered by window index for Set Container Content
-%% ---------------------------------------------------------------------------
 
-%% Player inventory window: slots 0–45 (46 total).
 slot_count(#player_inventory{}) -> 46;
 slot_count(#grid_inventory{slots = A}) -> array:size(A);
 slot_count(#dispenser_inventory{}) -> 9;
@@ -508,9 +509,6 @@ to_slot_list(Inv) ->
     N = slot_count(Inv),
     [get_slot(Inv, I) || I <- lists:seq(0, N - 1)].
 
-%% ---------------------------------------------------------------------------
-%% Slot helpers
-%% ---------------------------------------------------------------------------
 
 is_empty(#slot{item_count = C}) when C =< 0 -> true;
 is_empty(#slot{itemID = undefined}) -> true;
@@ -578,6 +576,78 @@ matches_hashed(Slot, #hashed_slot{} = H) ->
 matches_hashed(Slot, _) ->
     is_empty(Slot).
 
+
+%% set_creative_mode_slot — serverbound creative inventory set (SPEC.md)
+%% Returns {NewInv, DroppedItem | undefined}.
+%% Slot -1: drop outside the window (server should spawn an item entity).
+%% Slot >= 0: set that inventory slot to Clicked Item (empty = clear/delete).
+
+set_creative_mode_slot(-1, Item, Inv) ->
+    {Inv, normalize_slot(Item)};
+set_creative_mode_slot(Slot, Item, Inv) when is_integer(Slot), Slot >= 0 ->
+    {safe_set(Inv, Slot, normalize_slot(Item)), undefined};
+set_creative_mode_slot(_Slot, _Item, Inv) ->
+    {Inv, undefined}.
+
+normalize_slot(#slot{} = S) ->
+    case is_empty(S) of
+        true -> empty_slot();
+        false -> S
+    end;
+normalize_slot(_) ->
+    empty_slot().
+
+
+%% Protocol slot for selected hotbar index (0..8).
+hotbar_slot(HotbarIndex) ->
+    36 + HotbarIndex.
+
+%% Status 4 — Drop item (Q): remove one from selected hotbar.
+%% Returns {NewInv, DroppedSlot | undefined, TouchedSlots}.
+drop_selected_item(Inv, HotbarIndex) ->
+    Slot = hotbar_slot(HotbarIndex),
+    Stack = safe_get(Inv, Slot),
+    case is_empty(Stack) of
+        true ->
+            {Inv, undefined, []};
+        false ->
+            Dropped = with_count(Stack, 1),
+            Left = Stack#slot.item_count - 1,
+            NewInv = safe_set(Inv, Slot, with_count(Stack, Left)),
+            {NewInv, Dropped, [Slot]}
+    end.
+
+%% Status 3 — Drop item stack (Ctrl+Q): remove entire selected hotbar stack.
+%% Returns {NewInv, DroppedSlot | undefined, TouchedSlots}.
+drop_selected_stack(Inv, HotbarIndex) ->
+    Slot = hotbar_slot(HotbarIndex),
+    Stack = safe_get(Inv, Slot),
+    case is_empty(Stack) of
+        true ->
+            {Inv, undefined, []};
+        false ->
+            NewInv = safe_set(Inv, Slot, empty_slot()),
+            {NewInv, Stack, [Slot]}
+    end.
+
+%% Status 6 — Swap item in hand (F): swap selected hotbar with offhand (slot 45).
+%% Returns {NewInv, TouchedSlots}.
+swap_hands(Inv, HotbarIndex) ->
+    Main = hotbar_slot(HotbarIndex),
+    Off = 45,
+    SA = safe_get(Inv, Main),
+    SB = safe_get(Inv, Off),
+    case same_slot_content(SA, SB) of
+        true ->
+            {Inv, []};
+        false ->
+            Inv1 = safe_set(safe_set(Inv, Main, SB), Off, SA),
+            {Inv1, [Main, Off]}
+    end.
+
+same_slot_content(A, B) ->
+    is_empty(A) andalso is_empty(B)
+        orelse (same_item(A, B) andalso A#slot.item_count =:= B#slot.item_count).
 
 %% container_click — serverbound click simulation (SPEC.md)
 %% Returns {NewInv, NewCarried, TouchedSlots, NewDrag}
@@ -658,7 +728,6 @@ click(6, _Button, Slot, Inv, Carried, Drag, Touched) when Slot >= 0 ->
 click(_Mode, _Button, _Slot, Inv, Carried, Drag, Touched) ->
     {Inv, Carried, Touched, Drag}.
 
-%% --- mode 0 ---
 
 left_click(Slot, Inv, Carried, Drag, Touched) ->
     Stack = safe_get(Inv, Slot),
@@ -900,7 +969,6 @@ paint_right(Slots, Inv, Carried, Touched) ->
         Slots
     ).
 
-%% --- mode 6 ---
 
 collect(Slot, Inv, Carried0, Drag, Touched0) ->
     {Inv1, Carried1, Touched1, _} =
@@ -944,9 +1012,6 @@ gather([I | Rest], Inv, Carried, Touched, Drag) ->
             end
     end.
 
-%% ---------------------------------------------------------------------------
-%% Internal
-%% ---------------------------------------------------------------------------
 
 empty_array(Size, Default) ->
     array:new(Size, [{default, Default}, {fixed, true}]).

@@ -198,6 +198,18 @@ msg_to_record(Msg) ->
             #'minecraft:set_cursor_item'{
                 carried_item = CarriedItem
             };
+        {'minecraft:set_creative_mode_slot', [Slot, ClickedItem]} ->
+            #'minecraft:set_creative_mode_slot'{
+                slot = decode:extract_value(Slot),
+                clicked_item = ClickedItem
+            };
+        {'minecraft:player_action', [Status, #position{} = Location, Face, Sequence]} ->
+            #'minecraft:player_action'{
+                status = decode:extract_value(Status),
+                location = Location,
+                face = decode:extract_value(Face),
+                sequence = decode:extract_value(Sequence)
+            };
 
         _ ->
             io:format("Error: Unknown message type: ~p~n", [Msg]),

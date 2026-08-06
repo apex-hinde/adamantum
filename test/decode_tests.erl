@@ -622,6 +622,60 @@ finish_configuration_decode_test() ->
     Rec = decode:decode_message(<<>>, 'minecraft:finish_configuration'),
     ?assertEqual(#'minecraft:finish_configuration'{}, Rec).
 
+set_creative_mode_slot_decode_test() ->
+    %% Slot 36 (hotbar 0), stone stack of 10 (itemID 1), no components.
+    SlotBin = encode:encode_type(36, short),
+    ItemBin = encode:encode_type(
+        #slot{item_count = 10, itemID = 1, components_to_add = [], components_to_remove = []},
+        slot),
+    Rec = decode:decode_message(<<SlotBin/binary, ItemBin/binary>>,
+                                'minecraft:set_creative_mode_slot'),
+    ?assertEqual(36, Rec#'minecraft:set_creative_mode_slot'.slot),
+    Item = Rec#'minecraft:set_creative_mode_slot'.clicked_item,
+    ?assertEqual(10, Item#slot.item_count),
+    ?assertEqual(1, Item#slot.itemID),
+
+    %% Empty slot clear: slot 9, empty item (count 0).
+    EmptySlotBin = encode:encode_type(9, short),
+    EmptyItemBin = encode:encode_type(
+        #slot{item_count = 0, itemID = undefined, components_to_add = [], components_to_remove = []},
+        slot),
+    Rec2 = decode:decode_message(<<EmptySlotBin/binary, EmptyItemBin/binary>>,
+                                 'minecraft:set_creative_mode_slot'),
+    ?assertEqual(9, Rec2#'minecraft:set_creative_mode_slot'.slot),
+    ?assertEqual(0, (Rec2#'minecraft:set_creative_mode_slot'.clicked_item)#slot.item_count),
+
+    %% Drop outside: slot -1 with an item.
+    DropSlotBin = encode:encode_type(-1, short),
+    Rec3 = decode:decode_message(<<DropSlotBin/binary, ItemBin/binary>>,
+                                 'minecraft:set_creative_mode_slot'),
+    ?assertEqual(-1, Rec3#'minecraft:set_creative_mode_slot'.slot).
+
+player_action_decode_test() ->
+    %% Status 0 started digging, pos (1, 64, -2), face +Y (1), sequence 7
+    StatusBin = encode:encode_type(0, varint),
+    PosBin = encode:encode_type(#position{x = 1, y = 64, z = -2}, position),
+    FaceBin = encode:encode_type(1, byte),
+    SeqBin = encode:encode_type(7, varint),
+    Rec = decode:decode_message(
+        <<StatusBin/binary, PosBin/binary, FaceBin/binary, SeqBin/binary>>,
+        'minecraft:player_action'),
+    ?assertEqual(0, Rec#'minecraft:player_action'.status),
+    ?assertEqual(#position{x = 1, y = 64, z = -2}, Rec#'minecraft:player_action'.location),
+    ?assertEqual(1, Rec#'minecraft:player_action'.face),
+    ?assertEqual(7, Rec#'minecraft:player_action'.sequence),
+
+    %% Status 4 drop item: location 0/0/0, face -Y (0), sequence 0
+    S4 = encode:encode_type(4, varint),
+    P0 = encode:encode_type(#position{x = 0, y = 0, z = 0}, position),
+    F0 = encode:encode_type(0, byte),
+    Seq0 = encode:encode_type(0, varint),
+    Rec2 = decode:decode_message(
+        <<S4/binary, P0/binary, F0/binary, Seq0/binary>>,
+        'minecraft:player_action'),
+    ?assertEqual(4, Rec2#'minecraft:player_action'.status),
+    ?assertEqual(0, Rec2#'minecraft:player_action'.sequence).
+
 
 
 

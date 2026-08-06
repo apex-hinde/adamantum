@@ -85,3 +85,68 @@ merge_same_item_test() ->
     S9 = inventory:get_slot(Inv1, 9),
     ?assertEqual(64, S9#slot.item_count),
     ?assertEqual(6, Left#slot.item_count).
+
+%% --- set_creative_mode_slot (SPEC.md) ---
+
+creative_place_test() ->
+    Inv0 = inventory:new_player_inventory(),
+    {Inv1, Dropped} = inventory:set_creative_mode_slot(36, stone(), Inv0),
+    S = inventory:get_slot(Inv1, 36),
+    ?assertEqual(undefined, Dropped),
+    ?assertEqual(10, S#slot.item_count),
+    ?assertEqual(1, S#slot.itemID).
+
+creative_clear_test() ->
+    Inv0 = inventory:set_slot(inventory:new_player_inventory(), 9, stone()),
+    {Inv1, Dropped} = inventory:set_creative_mode_slot(9, inventory:empty_slot(), Inv0),
+    ?assertEqual(undefined, Dropped),
+    ?assertEqual(true, inventory:is_empty(inventory:get_slot(Inv1, 9))).
+
+creative_drop_outside_test() ->
+    Inv0 = inventory:new_player_inventory(),
+    {Inv1, Dropped} = inventory:set_creative_mode_slot(-1, stone(), Inv0),
+    ?assertEqual(Inv0, Inv1),
+    ?assertEqual(10, Dropped#slot.item_count),
+    ?assertEqual(1, Dropped#slot.itemID).
+
+creative_replace_test() ->
+    Inv0 = inventory:set_slot(inventory:new_player_inventory(), 36, stone()),
+    {Inv1, _} = inventory:set_creative_mode_slot(36, dirt(), Inv0),
+    S = inventory:get_slot(Inv1, 36),
+    ?assertEqual(5, S#slot.item_count),
+    ?assertEqual(2, S#slot.itemID).
+
+%% --- player_action inventory helpers (SPEC.md statuses 3, 4, 6) ---
+
+drop_selected_item_test() ->
+    Inv0 = inventory:set_slot(inventory:new_player_inventory(), 36, stone()),
+    {Inv1, Dropped, Touched} = inventory:drop_selected_item(Inv0, 0),
+    Left = inventory:get_slot(Inv1, 36),
+    ?assertEqual(1, Dropped#slot.item_count),
+    ?assertEqual(1, Dropped#slot.itemID),
+    ?assertEqual(9, Left#slot.item_count),
+    ?assertEqual([36], Touched).
+
+drop_selected_stack_test() ->
+    Inv0 = inventory:set_slot(inventory:new_player_inventory(), 37, stone()),
+    {Inv1, Dropped, Touched} = inventory:drop_selected_stack(Inv0, 1),
+    ?assertEqual(10, Dropped#slot.item_count),
+    ?assertEqual(true, inventory:is_empty(inventory:get_slot(Inv1, 37))),
+    ?assertEqual([37], Touched).
+
+drop_selected_empty_test() ->
+    Inv0 = inventory:new_player_inventory(),
+    {Inv1, Dropped, Touched} = inventory:drop_selected_item(Inv0, 0),
+    ?assertEqual(Inv0, Inv1),
+    ?assertEqual(undefined, Dropped),
+    ?assertEqual([], Touched).
+
+swap_hands_test() ->
+    Inv0 = inventory:set_slot(inventory:new_player_inventory(), 36, stone()),
+    Inv1 = inventory:set_slot(Inv0, 45, dirt()),
+    {Inv2, Touched} = inventory:swap_hands(Inv1, 0),
+    Main = inventory:get_slot(Inv2, 36),
+    Off = inventory:get_slot(Inv2, 45),
+    ?assertEqual(2, Main#slot.itemID),
+    ?assertEqual(1, Off#slot.itemID),
+    ?assertEqual(lists:sort([36, 45]), lists:sort(Touched)).
